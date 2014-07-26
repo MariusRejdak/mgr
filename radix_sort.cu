@@ -1,139 +1,100 @@
 /*
- *
- * radix_sort.cu
+ * bitonic_sort.cu
  *
  */
 
- #include <time.h>
- #include <stdio.h>
- #include <stdlib.h>
+#include <math.h>
+#include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include "utils.h"
 
- #define MAX_THREADS	128
- #define N		513
+#define MAX_THREADS 320UL
+#define MAX_DIM 65535UL
 
- int* r_values;
- int* d_values;
- int* t_values;
+__global__ static void Radix_Sort(int* values, int* values_sorted, short bit, size_t N) {
+    const size_t idx = gridDim.x * blockDim.x * blockIdx.y
+                     + blockDim.x * blockIdx.x
+                     + threadIdx.x;
 
- int* d_split;
- int* d_e;
- int* d_f;
- int* d_t;
+    if (idx < N) {
+        volatile size_t count;
+        int mask = 1 << bit;
 
+        if(values[idx] & mask) {
+            count = idx+1;
+            for (volatile size_t i = idx+1; i < N; ++i)
+            {
+                count += (values[i] & mask) ? 1 : 0;
+            }
+        }
+        else {
+            count = 0;
+            for (volatile size_t i = 0; i < idx; ++i)
+            {
+                count += (values[i] & mask) ? 0 : 1;
+            }
+        }
 
- // Kernel function
- __global__ static void Radix_sort(int* values, int* temp, int loop, int* split, int* e, int* f, int* t) {
-
-	int idx = threadIdx.x + blockIdx.x * blockDim.x;
-	int remainder[N], quotient[N];
-	int f_count, totalFalses;
-
-	if (idx < N) {
-		// split based on least significant bit
-		quotient[idx] = values[idx];
-		for (int x = 0; x < loop + 1; ++x) {
-			remainder[idx] = quotient[idx] % 10;
-			quotient[idx] = quotient[idx] / 10;
-		}
-
-		// set e[idx] = 0 in each 1 input and e[idx] = 1 in each 0 input
-		if (remainder[idx] == 1) {
-			split[idx] = 1;
-			e[idx] = 0;
-		}
-		else {
-			split[idx] = 0;
-			e[idx] = 1;
-		}
-	}
-	__syncthreads();
-
-	if (idx < N) {
-		// scan the 1s
-		f_count = 0;
-		for (int x = 0; x < N; ++x) {
-			f[x] = f_count;
-			if (e[x] == 1)
-				f_count++;
-		}
-
-		// calculate totalFalses
-		totalFalses = e[N-1] + f[N-1];
-
-		if (split[idx] == 1) {
-			// t = idx - f + totalFalses
-			t[idx] = idx - f[idx] + totalFalses;
-		}
-		else if (split[idx] == 0) {
-			// t = f[idx]
-			t[idx] = f[idx];
-		}
-
-		// Scatter input using t as scatter address
-		temp[t[idx]] = values[idx];
-	}
-	__syncthreads();
-
-	// copy new arrangement back to values
-	if (idx < N) {
-		values[idx] = temp[idx];
-	}
+        values_sorted[count] = values[idx];
+    }
 }
 
- // program main
- int main(int argc, char** argv) {
-	printf("./radix_sort starting with %d numbers...\n", N);
-	size_t size = N * sizeof(int);
+// program main
+int main(int argc, char** argv) {
+    void *h_mem, *d_mem_values, *d_mem_sorted;
+    size_t min_size = 1024UL; //1kB
+    size_t max_size = 1024UL*256UL; //1MB
 
-	// allocate host memory
-	r_values = (int*)malloc(size);
+    h_mem = malloc(max_size);
+    assert(h_mem != NULL);
+    assert(cudaMalloc(&d_mem_values, max_size) == cudaSuccess);
+    assert(cudaMalloc(&d_mem_sorted, max_size) == cudaSuccess);
 
-	// allocate device memory
-	cudaMalloc((void**)&d_values, size);
-	cudaMalloc((void**)&t_values, size);
-	cudaMalloc((void**)&d_split, size);
-	cudaMalloc((void**)&d_e, size);
-	cudaMalloc((void**)&d_f, size);
-	cudaMalloc((void**)&d_t, size);
+    //srand(time(NULL));
 
-	/* Types of data sets to be sorted:
-	 *	1. Normal distribution
-	 *	2. Gaussian distribution
-	 *	3. Bucket distribution
-	 * 	4. Sorted distribution
-	 *	5. Zero distribution
-	 */
+    for(size_t size = min_size; size <= max_size; size <<= 1) {
+        size_t N = size/sizeof(int);
+        size_t count = 0;
+        init_values_int_sorted((int*) h_mem, N, true);
 
-	for (int i = 0; i < 5; ++i) {
-		// Initialize data set
-		Init(r_values, i);
+        copy_to_device_time(d_mem_values, h_mem, size);
+        cudaDeviceSynchronize();
 
-		// copy data to device
-		cudaMemcpy(d_values, r_values, size, cudaMemcpyHostToDevice);
+        for (short bit = 0; bit < sizeof(int)*8; bit+=2)
+        {
+            if (N <= MAX_THREADS) {
+                Radix_Sort<<<1, N>>>((int*) d_mem_values, (int*) d_mem_sorted, bit, N);
+                cudaDeviceSynchronize();
+                Radix_Sort<<<1, N>>>((int*) d_mem_sorted, (int*) d_mem_values, bit+1, N);
+                count += 2;
+            }
+            else if(N <= MAX_DIM*MAX_THREADS) {
+                dim3 blocks(N/MAX_THREADS + 1);
+                Radix_Sort<<<blocks, MAX_THREADS>>>((int*) d_mem_values, (int*) d_mem_sorted, bit, N);
+                cudaDeviceSynchronize();
+                Radix_Sort<<<blocks, MAX_THREADS>>>((int*) d_mem_sorted, (int*) d_mem_values, bit+1, N);
+                count += 2;
+            }
+            else {
+                dim3 blocks(MAX_DIM, N/MAX_THREADS/MAX_DIM + 1);
+                Radix_Sort<<<blocks, MAX_THREADS>>>((int*) d_mem_values, (int*) d_mem_sorted, bit, N);
+                cudaDeviceSynchronize();
+                Radix_Sort<<<blocks, MAX_THREADS>>>((int*) d_mem_sorted, (int*) d_mem_values, bit+1, N);
+                count += 2;
+            }
+            cudaDeviceSynchronize();
+        }
 
-		printf("Beginning kernel execution...\n");
+        copy_to_host_time(h_mem, d_mem_sorted, size);
+        cudaDeviceSynchronize();
 
-		cudaThreadSynchronize();
+        printf("after %ld %s %ld\n", N, is_int_array_sorted((int*) h_mem, N, false) ? "true":"false", count);
+    }
 
-		// execute kernel
-		for (int j = 0; j < 8; ++j) {
-			Radix_sort <<< 1, N >>> (d_values, t_values, j, d_split, d_e, d_f, d_t);
-		}
+    cudaFree(d_mem_values);
+    cudaFree(d_mem_sorted);
+    free(h_mem);
 
-		cudaThreadSynchronize();
-
-		// copy data back to host
-		cudaMemcpy(r_values, t_values, size, cudaMemcpyDeviceToHost);
-
-
-	// free memory
-	cudaFree(d_values);
-	cudaFree(t_values);
-	cudaFree(d_split);
-	cudaFree(d_e);
-	cudaFree(d_f);
-	cudaFree(d_t);
-	free(r_values);
-
-	cudaThreadExit();
- }
+    return 0;
+}

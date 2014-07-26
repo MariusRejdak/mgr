@@ -42,13 +42,13 @@ int main(int argc, char** argv) {
 
 	h_mem = malloc(max_size);
 	assert(h_mem != NULL);
-	assert(cudaMalloc(&d_mem, max_size) == cudaSuccess);
+	gpuErrchk(cudaMalloc(&d_mem, max_size));
 
 	//srand(time(NULL));
 
 	for(size_t size = min_size; size <= max_size; size <<= 1) {
 		size_t N = size/sizeof(int);
-		init_values_int_sorted((int*) h_mem, N, true);
+		init_values_int((int*) h_mem, N);
 
 		copy_to_device_time(d_mem, h_mem, size);
 		cudaDeviceSynchronize();
