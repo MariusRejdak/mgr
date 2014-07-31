@@ -9,26 +9,30 @@
 #include <stdlib.h>
 #include "utils.h"
 
-#define MAX_THREADS 1024UL
-#define MAX_DIM 65535UL
+typedef unsigned int uint;
+typedef unsigned short ushort;
 
-__global__ static void Bitonic_Sort(int* values, size_t j, size_t k, size_t N) {
-	const size_t idx = gridDim.x * blockDim.x * blockIdx.y
+#define MAX_THREADS 512UL
+#define MAX_DIM 32768UL
+
+__global__ static void Bitonic_Sort(int* __restrict__ values, uint j, uint k, uint N) {
+	const uint idx = gridDim.x * blockDim.x * blockIdx.y
 					 + blockDim.x * blockIdx.x
 					 + threadIdx.x;
 
 	if (idx < N) {
-		size_t ixj = idx^j;
+		register const uint ixj = idx^j;
+		register const uint v_idx = values[idx];
+		register const uint v_ixj = values[ixj];
+
 		if (ixj > idx) {
-			if ((idx&k) == 0 && values[idx] > values[ixj]) {
-				int tmp = values[idx];
-				values[idx] = values[ixj];
-				values[ixj] = tmp;
+			if ((idx&k) == 0 && v_idx > values[ixj]) {
+				values[idx] = v_ixj;
+				values[ixj] = v_idx;
 			}
 			if ((idx&k) != 0 && values[idx] < values[ixj]) {
-				int tmp = values[idx];
-				values[idx] = values[ixj];
-				values[ixj] = tmp;
+				values[idx] = v_ixj;
+				values[ixj] = v_idx;
 			}
 		}
 	}
@@ -38,7 +42,7 @@ __global__ static void Bitonic_Sort(int* values, size_t j, size_t k, size_t N) {
 int main(int argc, char** argv) {
 	void *h_mem, *d_mem;
 	size_t min_size = 1024UL; //1kB
-	size_t max_size = 1024UL*1024UL*512UL; //512MB
+	size_t max_size = 1024UL*1024UL*256UL; //256MB
 
 	h_mem = malloc(max_size);
 	assert(h_mem != NULL);
@@ -53,13 +57,13 @@ int main(int argc, char** argv) {
 		copy_to_device_time(d_mem, h_mem, size);
 		cudaDeviceSynchronize();
 
-		for (size_t k = 2; k <= N; k <<= 1) {
-			for (size_t j = k >> 1; j > 0; j >>= 1) {
+		for (uint k = 2; k <= N; k <<= 1) {
+			for (uint j = k >> 1; j > 0; j >>= 1) {
 				if (N <= MAX_THREADS) {
 					Bitonic_Sort<<<1, N>>>((int*) d_mem, j, k, N);
 				}
 				else if(N <= MAX_DIM*MAX_THREADS) {
-					dim3 blocks(N/MAX_THREADS + 1);
+					dim3 blocks(N/MAX_THREADS);
 					Bitonic_Sort<<<blocks, MAX_THREADS>>>((int*) d_mem, j, k, N);
 				}
 				else {
