@@ -15,7 +15,8 @@ typedef unsigned short ushort;
 #define MAX_THREADS 512UL
 #define MAX_DIM 32768UL
 
-__global__ static void Bitonic_Sort(int* __restrict__ values, uint j, uint k, uint N) {
+__global__ static void Bitonic_Sort(int* __restrict__ values, const uint j, const uint k, const uint N)
+{
 	const uint idx = gridDim.x * blockDim.x * blockIdx.y
 					 + blockDim.x * blockIdx.x
 					 + threadIdx.x;
@@ -38,6 +39,36 @@ __global__ static void Bitonic_Sort(int* __restrict__ values, uint j, uint k, ui
 	}
 }
 
+void inline Bitonic_Sort_C(int* d_mem,
+                           const uint N)
+{
+	int threads;
+	dim3 blocks(1,1,1);
+
+	if (N <= MAX_THREADS)
+	{
+		threads = N;
+	}
+	else if(N <= MAX_DIM*MAX_THREADS)
+	{
+		threads = MAX_THREADS;
+		blocks.x = N/MAX_THREADS;
+	}
+	else
+	{
+		threads = MAX_THREADS;
+		blocks.x = MAX_DIM;
+		blocks.y = N/MAX_THREADS/MAX_DIM;
+	}
+
+	for (uint k = 2; k <= N; k <<= 1) {
+		for (uint j = k >> 1; j > 0; j >>= 1) {
+			Bitonic_Sort<<<blocks, threads>>>(d_mem, j, k, N);
+			cudaDeviceSynchronize();
+		}
+	}
+}
+
 // program main
 int main(int argc, char** argv) {
 	void *h_mem, *d_mem;
@@ -48,7 +79,7 @@ int main(int argc, char** argv) {
 	assert(h_mem != NULL);
 	gpuErrchk(cudaMalloc(&d_mem, max_size));
 
-	//srand(time(NULL));
+	srand(time(NULL));
 
 	for(size_t size = min_size; size <= max_size; size <<= 1) {
 		size_t N = size/sizeof(int);
@@ -57,22 +88,8 @@ int main(int argc, char** argv) {
 		copy_to_device_time(d_mem, h_mem, size);
 		cudaDeviceSynchronize();
 
-		for (uint k = 2; k <= N; k <<= 1) {
-			for (uint j = k >> 1; j > 0; j >>= 1) {
-				if (N <= MAX_THREADS) {
-					Bitonic_Sort<<<1, N>>>((int*) d_mem, j, k, N);
-				}
-				else if(N <= MAX_DIM*MAX_THREADS) {
-					dim3 blocks(N/MAX_THREADS);
-					Bitonic_Sort<<<blocks, MAX_THREADS>>>((int*) d_mem, j, k, N);
-				}
-				else {
-					dim3 blocks(MAX_DIM, N/MAX_THREADS/MAX_DIM + 1);
-					Bitonic_Sort<<<blocks, MAX_THREADS>>>((int*) d_mem, j, k, N);
-				}
-				cudaDeviceSynchronize();
-			}
-		}
+		Bitonic_Sort_C((int*) d_mem, N);
+		gpuErrchk( cudaPeekAtLastError() );
 
 		copy_to_host_time(h_mem, d_mem, size);
 		cudaDeviceSynchronize();

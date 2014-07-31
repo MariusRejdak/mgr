@@ -23,34 +23,23 @@ __global__ static void Radix_Sum(int* __restrict__ values,
     #define TID threadIdx.x
     #define TDIM blockDim.x
 
-    register const uint bid = gridDim.x * blockIdx.y + blockIdx.x;
-    register const uint idx = TDIM * bid + TID;
+    register const uint idx = TDIM * (gridDim.x * blockIdx.y + blockIdx.x) + TID;
+    register const uint idxp1_max = (idx+1)*MAX_THREADS;
+    register uint count0 = 0;
+    register uint count1 = 0;
 
-    __shared__ ushort masks[MAX_THREADS];
-
-
-    if (idx < N)
-        masks[TID] = values[idx] & mask;
-    __syncthreads();
-
-    if (idx < N)
+    if (idx < N/MAX_THREADS)
     {
-        if (TID == TDIM-1 || idx == N-1)
+        for (register uint i = idx*MAX_THREADS; i < idxp1_max; ++i)
         {
-            register uint count0 = 0;
-            register uint count1 = 0;
-
-            for (register uint i = 0; i <= TID; ++i)
-            {
-                if (masks[i])
-                    count1 += 1;
-                else
-                    count0 += 1;
-            }
-
-            values_sum0[bid] = count0;
-            values_sum1[bid] = count1;
+            if (values[i] & mask)
+                ++count1;
+            else
+                ++count0;
         }
+
+        values_sum0[idx] = count0;
+        values_sum1[idx] = count1;
     }
 
     #undef TID
@@ -63,26 +52,17 @@ __global__ static void Sum_PreScan(uint* __restrict__ values_sum,
 {
     #define TID threadIdx.x
     #define TDIM blockDim.x
-    register const uint bid = gridDim.x * blockIdx.y + blockIdx.x;
-    register const uint idx = TDIM * bid + TID;
 
-    __shared__ uint sums[MAX_THREADS];
+    register const uint idx = TDIM * (gridDim.x * blockIdx.y + blockIdx.x) + TID;
+    register const uint idxp1_max = (idx+1)*MAX_THREADS;
+    register uint count = 0;
 
-    if (idx < N)
-        sums[TID] = values_sum[idx];
-    __syncthreads();
-
-    if (idx < N)
+    if (idx < N/MAX_THREADS)
     {
-        if (TID == TDIM-1 || idx == N-1)
-        {
-            register uint count = 0;
-            for (register uint i = 0; i <= TID; ++i)
-                count += sums[i];
+        for (register uint i = idx*MAX_THREADS; i < idxp1_max; ++i)
+            count += values_sum[i];
 
-            blocks_sum[bid] = count;
-        }
-
+        blocks_sum[idx] = count;
     }
 
     #undef TID
@@ -173,28 +153,25 @@ __global__ static void Radix_Sort(int* __restrict__ values,
     __shared__ ushort masks[MAX_THREADS];
 
     if (idx < N)
-        masks[TID] = values[idx] & mask;
+        masks[TID] = (values[idx] & mask) ? 1 : 0;
     __syncthreads();
 
     if (idx < N)
     {
-        register uint count;
-        register uint current;
-        current = masks[TID];
-
-        count = current ? values_sum0[BDIM-1] : 0;
+        register uint current = masks[TID];
+        register uint count = current ? values_sum0[BDIM-1] : 0;
 
         if (TID < TDIM/2)
         {
             count += bid > 0 ? values_sum0[bid-1] : 0;
             for (register uint i = 0; i < TID; ++i)
-                count += current ? (masks[i] ? 1 : 0) : (masks[i] ? 0 : 1);
+                count += current ^ masks[i];
         }
         else
         {
             count += values_sum0[bid];
             for (register uint i = TID; i < TDIM; ++i)
-                count -= current ? (masks[i] ? 1 : 0) : (masks[i] ? 0 : 1);
+                count -= current ^ masks[i];
         }
 
         values_sorted[idx] = count;
@@ -205,76 +182,84 @@ __global__ static void Radix_Sort(int* __restrict__ values,
     #undef BDIM
 }
 
-void Radix_Sort_C(int* d_mem_values,
-                  int* d_mem_sorted,
-                  const int mask, const uint N)
+void inline Radix_Sort_C(int* d_mem_values,
+                         int* d_mem_sorted,
+                         const uint N)
 {
     uint *d_mem_sum0, *d_mem_sum1;
     gpuErrchk( cudaMalloc(&d_mem_sum0, N*sizeof(uint)/MAX_THREADS) );
     gpuErrchk( cudaMalloc(&d_mem_sum1, N*sizeof(uint)/MAX_THREADS) );
 
-    if (N <= MAX_THREADS) {
-        Radix_Sum<<<1, N>>>(d_mem_values, d_mem_sum0,  d_mem_sum1, mask, N);
-        cudaDeviceSynchronize();
-
-        Radix_Sort<<<1, N>>>(d_mem_values, d_mem_sorted, d_mem_sum0, d_mem_sum1, mask, N);
-        cudaDeviceSynchronize();
-    }
-    else
+    for (short bit = 0; bit < sizeof(int)*8; ++bit)
     {
-        uint *d_mem_blocks_sum0, *d_mem_blocks_sum1;
-        dim3 blocks(1,1,1);
-        dim3 blocks2(1,1,1);
-        cudaStream_t stream1, stream2;
-        cudaStreamCreate(&stream1);
-        cudaStreamCreate(&stream2);
+        int mask = 1 << bit;
 
-        gpuErrchk( cudaMalloc(&d_mem_blocks_sum0, N*sizeof(uint)/MAX_THREADS/MAX_THREADS) );
-        gpuErrchk( cudaMalloc(&d_mem_blocks_sum1, N*sizeof(uint)/MAX_THREADS/MAX_THREADS) );
+        if (N <= MAX_THREADS) {
+            Radix_Sum<<<1, N/MAX_THREADS + 1>>>(d_mem_values, d_mem_sum0,  d_mem_sum1, mask, N);
+            cudaDeviceSynchronize();
 
-        if(N <= MAX_DIM*MAX_THREADS)
-        {
-            blocks.x = N/MAX_THREADS + 1;
-            blocks2.x = N/MAX_THREADS/MAX_THREADS + 1;
-        }
-        else
-        {
-            blocks.x = MAX_DIM;
-            blocks.y = N/MAX_THREADS/MAX_DIM;
-            blocks2.x = N/MAX_THREADS/MAX_THREADS;
-        }
-
-        Radix_Sum<<<blocks, MAX_THREADS>>>(d_mem_values, d_mem_sum0, d_mem_sum1, mask, N);
-        cudaDeviceSynchronize();
-
-        if(N < MAX_THREADS*MAX_THREADS)
-        {
-            Sum_Scan<<<1, blocks.x, 0, stream1>>>(d_mem_sum0, blocks.x);
-            Sum_Scan<<<1, blocks.x, 0, stream2>>>(d_mem_sum1, blocks.x);
+            Radix_Sort<<<1, N>>>(d_mem_values, d_mem_sorted, d_mem_sum0, d_mem_sum1, mask, N);
             cudaDeviceSynchronize();
         }
         else
         {
-            Sum_PreScan<<<blocks2, MAX_THREADS, 0, stream1>>>(d_mem_sum0, d_mem_blocks_sum0, blocks.x*blocks.y);
-            Sum_PreScan<<<blocks2, MAX_THREADS, 0, stream2>>>(d_mem_sum1, d_mem_blocks_sum1, blocks.x*blocks.y);
+            uint *d_mem_blocks_sum0, *d_mem_blocks_sum1;
+            dim3 blocks(1,1,1);
+            dim3 blocks2(1,1,1);
+            cudaStream_t stream1, stream2;
+            cudaStreamCreate(&stream1);
+            cudaStreamCreate(&stream2);
+
+            gpuErrchk( cudaMalloc(&d_mem_blocks_sum0, N*sizeof(uint)/MAX_THREADS/MAX_THREADS) );
+            gpuErrchk( cudaMalloc(&d_mem_blocks_sum1, N*sizeof(uint)/MAX_THREADS/MAX_THREADS) );
+
+            if(N <= MAX_DIM*MAX_THREADS)
+            {
+                blocks.x = N/MAX_THREADS + 1;
+                blocks2.x = N/MAX_THREADS/MAX_THREADS + 1;
+            }
+            else
+            {
+                blocks.x = MAX_DIM;
+                blocks.y = N/MAX_THREADS/MAX_DIM;
+                blocks2.x = N/MAX_THREADS/MAX_THREADS;
+            }
+
+            if(N < MAX_THREADS*MAX_THREADS)
+            {
+                Radix_Sum<<<1, blocks.x>>>(d_mem_values, d_mem_sum0, d_mem_sum1, mask, N);
+                cudaDeviceSynchronize();
+
+                Sum_Scan<<<1, blocks.x, 0, stream1>>>(d_mem_sum0, blocks.x);
+                Sum_Scan<<<1, blocks.x, 0, stream2>>>(d_mem_sum1, blocks.x);
+                cudaDeviceSynchronize();
+            }
+            else
+            {
+                Radix_Sum<<<blocks2, MAX_THREADS>>>(d_mem_values, d_mem_sum0, d_mem_sum1, mask, N);
+                cudaDeviceSynchronize();
+
+                Sum_PreScan<<<1, blocks2.x, 0, stream1>>>(d_mem_sum0, d_mem_blocks_sum0, blocks.x*blocks.y);
+                Sum_PreScan<<<1, blocks2.x, 0, stream2>>>(d_mem_sum1, d_mem_blocks_sum1, blocks.x*blocks.y);
+                cudaDeviceSynchronize();
+
+                Sum_Scan<<<1, blocks2.x, 0, stream1>>>(d_mem_blocks_sum0, blocks2.x);
+                Sum_Scan<<<1, blocks2.x, 0, stream2>>>(d_mem_blocks_sum1, blocks2.x);
+                cudaDeviceSynchronize();
+
+                Sum_PostScan<<<blocks2, MAX_THREADS, 0, stream1>>>(d_mem_sum0, d_mem_blocks_sum0, blocks.x*blocks.y);
+                Sum_PostScan<<<blocks2, MAX_THREADS, 0, stream2>>>(d_mem_sum1, d_mem_blocks_sum1, blocks.x*blocks.y);
+                cudaDeviceSynchronize();
+            }
+
+            Radix_Sort<<<blocks, MAX_THREADS>>>(d_mem_values, d_mem_sorted, d_mem_sum0, d_mem_sum1, mask, N);
             cudaDeviceSynchronize();
 
-            Sum_Scan<<<1, blocks2.x, 0, stream1>>>(d_mem_blocks_sum0, blocks2.x);
-            Sum_Scan<<<1, blocks2.x, 0, stream2>>>(d_mem_blocks_sum1, blocks2.x);
-            cudaDeviceSynchronize();
-
-            Sum_PostScan<<<blocks2, MAX_THREADS, 0, stream1>>>(d_mem_sum0, d_mem_blocks_sum0, blocks.x*blocks.y);
-            Sum_PostScan<<<blocks2, MAX_THREADS, 0, stream2>>>(d_mem_sum1, d_mem_blocks_sum1, blocks.x*blocks.y);
-            cudaDeviceSynchronize();
+            cudaStreamDestroy(stream1);
+            cudaStreamDestroy(stream2);
+            cudaFree(d_mem_blocks_sum0);
+            cudaFree(d_mem_blocks_sum1);
         }
-
-        Radix_Sort<<<blocks, MAX_THREADS>>>(d_mem_values, d_mem_sorted, d_mem_sum0, d_mem_sum1, mask, N);
-        cudaDeviceSynchronize();
-
-        cudaStreamDestroy(stream1);
-        cudaStreamDestroy(stream2);
-        cudaFree(d_mem_blocks_sum0);
-        cudaFree(d_mem_blocks_sum1);
     }
     cudaFree(d_mem_sum0);
     cudaFree(d_mem_sum1);
@@ -283,16 +268,15 @@ void Radix_Sort_C(int* d_mem_values,
 // program main
 int main(int argc, char** argv) {
     void *h_mem, *d_mem_values, *d_mem_sorted;
-
-    size_t min_size = 1024UL;
-    size_t max_size = 1024UL*1024UL*256UL;
+    size_t min_size = 1024UL; //1kB
+    size_t max_size = 1024UL*1024UL*256UL; //256MB
 
     h_mem = malloc(max_size);
     assert(h_mem != NULL);
     gpuErrchk( cudaMalloc(&d_mem_values, max_size) );
     gpuErrchk( cudaMalloc(&d_mem_sorted, max_size) );
 
-    //srand(time(NULL));
+    srand(time(NULL));
 
     for(size_t size = min_size; size <= max_size; size <<= 1) {
         size_t N = size/sizeof(int);
@@ -301,11 +285,8 @@ int main(int argc, char** argv) {
         copy_to_device_time(d_mem_values, h_mem, size);
         cudaDeviceSynchronize();
 
-        for (short bit = 0; bit < sizeof(int)*8; ++bit)
-        {
-            Radix_Sort_C((int*) d_mem_values, (int*) d_mem_sorted, 1 << bit, N);
-            gpuErrchk( cudaPeekAtLastError() );
-        }
+        Radix_Sort_C((int*) d_mem_values, (int*) d_mem_sorted, N);
+        gpuErrchk( cudaPeekAtLastError() );
 
         copy_to_host_time(h_mem, d_mem_sorted, size);
         cudaDeviceSynchronize();
