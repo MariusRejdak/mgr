@@ -12,29 +12,27 @@
 typedef unsigned int uint;
 typedef unsigned short ushort;
 
-#define MAX_THREADS 512UL
+#define MAX_THREADS 256UL
 #define MAX_DIM 32768UL
 
-__global__ static void Bitonic_Sort(int* __restrict__ values, const uint j, const uint k, const uint N)
+__global__ static void Bitonic_Sort(int* __restrict__ values,
+                                    const uint j,
+                                    const uint k,
+                                    const uint N)
 {
 	const uint idx = gridDim.x * blockDim.x * blockIdx.y
 					 + blockDim.x * blockIdx.x
 					 + threadIdx.x;
+	const uint ixj = idx^j;
 
-	if (idx < N) {
-		register const uint ixj = idx^j;
-		register const uint v_idx = values[idx];
-		register const uint v_ixj = values[ixj];
+	if (ixj > idx) {
+		const uint v_idx = values[idx];
+		const uint v_ixj = values[ixj];
 
-		if (ixj > idx) {
-			if ((idx&k) == 0 && v_idx > values[ixj]) {
-				values[idx] = v_ixj;
-				values[ixj] = v_idx;
-			}
-			if ((idx&k) != 0 && values[idx] < values[ixj]) {
-				values[idx] = v_ixj;
-				values[ixj] = v_idx;
-			}
+		if ((idx&k) ? (v_idx < v_ixj) : (v_idx > v_ixj))
+		{
+			values[idx] = v_ixj;
+			values[ixj] = v_idx;
 		}
 	}
 }
