@@ -10,29 +10,69 @@
 #include "utils.h"
 
 
-__global__ static void CUDA_RadixMask(int* __restrict__ values,
-                                      uint* __restrict__ values_masks,
-                                      const int mask)
-{
-    #define TID threadIdx.x
-    #define TDIM blockDim.x
-
-    register const uint idx = TDIM * (gridDim.x * blockIdx.y + blockIdx.x) + TID;
-
-    values_masks[idx] = (values[idx] & mask) ? 0 : 1;
-
-    #undef TID
-    #undef TDIM
-}
-
-__global__ void CUDA_SumScan(uint* __restrict__ values,
-                             uint* __restrict__ aux,
-                             bool inclusive)
+__global__ static void CUDA_RadixPrefixSum(int* __restrict__ values,
+                                           uint* __restrict__ values_masks,
+                                           uint* __restrict__ aux,
+                                           const int mask)
 {
     #define TID threadIdx.x
     #define TDIM blockDim.x
     #define BID (gridDim.x * blockIdx.y + blockIdx.x)
-    #define BDIM (gridDim.x * gridDim.y)
+
+    const uint idx = TDIM * BID + TID;
+    uint tmp_in0 = (values[idx*2] & mask) ? 0 : 1;
+    uint tmp_in1 = (values[idx*2 + 1] & mask) ? 0 : 1;
+
+    __shared__ uint shared[MAX_THREADS];
+
+    shared[TID] = tmp_in0 + tmp_in1;
+    __syncthreads();
+
+    for (uint i = 1; i < TDIM; i <<= 1)
+    {
+        const uint x = (i<<1)-1;
+        if (TID >= i && (TID & x) == x)
+        {
+            shared[TID] += shared[TID - i];
+        }
+        __syncthreads();
+    }
+
+    if (TID == 0)
+        shared[TDIM - 1] = 0;
+    __syncthreads();
+
+    for (uint i = TDIM>>1; i >= 1; i >>= 1)
+    {
+        uint x = (i<<1)-1;
+        if (TID >= i && (TID & x) == x)
+        {
+            uint swp_tmp = shared[TID - i];
+            shared[TID - i] = shared[TID];
+            shared[TID] += swp_tmp;
+        }
+        __syncthreads();
+    }
+
+    values_masks[idx*2] = shared[TID];
+    values_masks[idx*2 + 1] = shared[TID] + tmp_in0;
+
+    __syncthreads();
+
+    if (TID == TDIM-1)
+        aux[BID] = tmp_in0 + shared[TID] + tmp_in1;
+
+    #undef TID
+    #undef TDIM
+    #undef BID
+}
+
+__global__ void CUDA_SumScan(uint* __restrict__ values,
+                             uint* __restrict__ aux)
+{
+    #define TID threadIdx.x
+    #define TDIM blockDim.x
+    #define BID (gridDim.x * blockIdx.y + blockIdx.x)
 
     const uint idx = TDIM * BID + TID;
     uint tmp_in0 = values[idx*2];
@@ -69,18 +109,17 @@ __global__ void CUDA_SumScan(uint* __restrict__ values,
         __syncthreads();
     }
 
-    values[idx*2] = shared[TID] + (inclusive ? tmp_in0 : 0);
-    values[idx*2 + 1] = shared[TID] + tmp_in0 + (inclusive ? tmp_in1 : 0);
+    values[idx*2] = shared[TID] + tmp_in0;
+    values[idx*2 + 1] = shared[TID] + tmp_in0 + tmp_in1;
 
     __syncthreads();
 
-    if (TID == TDIM-1 && aux)
+    if (TID == TDIM-1)
         aux[BID] = tmp_in0 + shared[TID] + tmp_in1;
 
     #undef TID
     #undef TDIM
     #undef BID
-    #undef BDIM
 }
 
 __global__ void CUDA_SumScanUpdate(uint* __restrict__ values,
@@ -138,17 +177,17 @@ __global__ static void CUDA_RadixSort(int* __restrict__ values,
 }
 
 void SumScan_C(uint* d_mem_values,
-               const uint N, bool inclusive)
+               const uint N)
 {
     uint *d_mem_aux;
     kdim v = get_kdim(N);
 
     gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(uint)) );
-    CUDA_SumScan<<<v.dim_blocks, v.num_threads/2>>>(d_mem_values, d_mem_aux, inclusive);
+    CUDA_SumScan<<<v.dim_blocks, v.num_threads/2>>>(d_mem_values, d_mem_aux);
     cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
 
     if (v.num_blocks > 1) {
-        SumScan_C(d_mem_aux, v.num_blocks, true);
+        SumScan_C(d_mem_aux, v.num_blocks);
         CUDA_SumScanUpdate<<<v.dim_blocks, v.num_threads>>>(d_mem_values, d_mem_aux);
         cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
     }
@@ -156,7 +195,27 @@ void SumScan_C(uint* d_mem_values,
     cudaFree(d_mem_aux);
 }
 
-void inline Radix_Sort_C(int* d_mem_values,
+void RadixPrefixSum_C(int* d_mem_values,
+                      uint* d_mem_masks,
+                      const uint N, const int mask)
+{
+    uint *d_mem_aux;
+    kdim v = get_kdim(N);
+
+    gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(uint)) );
+    CUDA_RadixPrefixSum<<<v.dim_blocks, v.num_threads/2>>>(d_mem_values, d_mem_masks, d_mem_aux, mask);
+    cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
+
+    if (v.num_blocks > 1) {
+        SumScan_C(d_mem_aux, v.num_blocks);
+        CUDA_SumScanUpdate<<<v.dim_blocks, v.num_threads>>>(d_mem_masks, d_mem_aux);
+        cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
+    }
+
+    cudaFree(d_mem_aux);
+}
+
+void inline RadixSort_C(int* d_mem_values,
                          int* d_mem_sorted,
                          const uint N)
 {
@@ -179,10 +238,7 @@ void inline Radix_Sort_C(int* d_mem_values,
             d_s = d_mem_values;
         }
 
-        CUDA_RadixMask<<<v.dim_blocks, v.num_threads>>>(d_v, d_m, mask);
-        cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
-
-        SumScan_C(d_m, N, false);
+        RadixPrefixSum_C(d_v, d_m, N, mask);
 
         CUDA_RadixSort<<<v.dim_blocks, v.num_threads>>>(d_v, d_s, d_m, mask);
         cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
@@ -211,7 +267,7 @@ int main(int argc, char** argv) {
         copy_to_device_time(d_mem_values, h_mem, size);
         cudaDeviceSynchronize();
 
-        Radix_Sort_C((int*) d_mem_values, (int*) d_mem_sorted, N);
+        RadixSort_C((int*) d_mem_values, (int*) d_mem_sorted, N);
         cudaDeviceSynchronize();
         gpuErrchk( cudaPeekAtLastError() );
 
