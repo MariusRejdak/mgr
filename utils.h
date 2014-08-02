@@ -15,39 +15,39 @@ struct counted_value {
     int c;
 };
 
-void init_values_int(int *values, size_t length) {
-    for (size_t i = 0; i < length; ++i)
-    {
+void init_values_int(int *values, size_t length)
+{
+    for (size_t i = 0; i < length; ++i) {
         values[i] = rand();
     }
 }
 
-void init_values_int_sorted(int *values, size_t length, bool reverse) {
-    for (size_t i = 0; i < length; ++i)
-    {
+void init_values_int_sorted(int *values, size_t length, bool reverse)
+{
+    for (size_t i = 0; i < length; ++i) {
         values[i] = !reverse ? i : length-i-1;
     }
 }
 
-void init_values_long(long *values, size_t length) {
-    for (size_t i = 0; i < length; ++i)
-    {
+void init_values_long(long *values, size_t length)
+{
+    for (size_t i = 0; i < length; ++i) {
         values[i] = (long)rand() * (long)rand();
     }
 }
 
-void init_values_long_sorted(long *values, size_t length, bool reverse) {
-    for (size_t i = 0; i < length; ++i)
-    {
+void init_values_long_sorted(long *values, size_t length, bool reverse)
+{
+    for (size_t i = 0; i < length; ++i) {
         values[i] = !reverse ? i : length-i-1;
     }
 }
 
-void init_values_counted(struct counted_value *values, int length, int max_value) {
+void init_values_counted(struct counted_value *values, int length, int max_value)
+{
     int counter = 0;
 
-    for (int i = 0; i < length; ++i)
-    {
+    for (int i = 0; i < length; ++i) {
         values[i].v = rand() % (max_value+1);
         values[i].c = counter++;
     }
@@ -61,9 +61,9 @@ void init_values_counted(struct counted_value *values, int length, int max_value
     }
 }*/
 
-bool is_int_array_sorted(int *values, size_t length, bool reverse) {
-    for (size_t i = 0; i+1 < length-1; ++i)
-    {
+bool is_int_array_sorted(int *values, size_t length, bool reverse)
+{
+    for (size_t i = 0; i+1 < length-1; ++i) {
         if (!reverse ? (values[i] > values[i+1]) : (values[i] < values[i+1])) {
             return false;
         }
@@ -71,28 +71,28 @@ bool is_int_array_sorted(int *values, size_t length, bool reverse) {
     return true;
 }
 
-bool is_long_array_sorted(long *values, size_t length, bool reverse) {
+bool is_long_array_sorted(long *values, size_t length, bool reverse)
+{
     bool sorted = true;
-    for (size_t i = 0; i < length-1; ++i)
-    {
+    for (size_t i = 0; i < length-1; ++i) {
         sorted = sorted && (!reverse ? (values[i] <= values[i+1]) : (values[i] >= values[i+1]));
     }
     return sorted;
 }
 
-bool is_counted_array_sorted(struct counted_value *values, int length, bool reverse) {
+bool is_counted_array_sorted(struct counted_value *values, int length, bool reverse)
+{
     bool sorted = true;
-    for (int i = 0; i < length-1; ++i)
-    {
+    for (int i = 0; i < length-1; ++i) {
         sorted = sorted && (!reverse ? (values[i].v <= values[i+1].v) : (values[i].v >= values[i+1].v));
     }
     return sorted;
 }
 
-bool is_counted_array_sorted_stable(struct counted_value *values, int length, bool reverse) {
+bool is_counted_array_sorted_stable(struct counted_value *values, int length, bool reverse)
+{
     bool stable = true;
-    for (int i = 0; i < length-1; ++i)
-    {
+    for (int i = 0; i < length-1; ++i) {
         if(values[i].v == values[i+1].v) {
             stable = stable && (!reverse ? (values[i].c <= values[i+1].c) : (values[i].c >= values[i+1].c));
         }
@@ -112,9 +112,9 @@ bool is_counted_array_sorted_stable(struct counted_value *values, int length, bo
     return sorted;
 }*/
 
-void print_int_array(const int *a, size_t size) {
-    for (size_t i = 0; i < size; ++i)
-    {
+void print_int_array(const int *a, size_t size)
+{
+    for (size_t i = 0; i < size; ++i) {
         printf("%d\n", a[i]);
     }
 }
