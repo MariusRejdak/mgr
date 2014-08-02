@@ -9,267 +9,292 @@
 #include <stdlib.h>
 #include "utils.h"
 
-typedef unsigned int uint;
-typedef unsigned short ushort;
 
-#define MAX_THREADS 512UL
-#define MAX_DIM 32768UL
-
-__global__ static void Radix_Sum(int* __restrict__ values,
-                                 uint* __restrict__ values_sum0,
-                                 uint* __restrict__ values_sum1,
-                                 const int mask, const size_t N)
+__global__ static void CUDA_RadixMask(int* __restrict__ values,
+                                      uint* __restrict__ values_masks,
+                                      const int mask)
 {
     #define TID threadIdx.x
     #define TDIM blockDim.x
 
     register const uint idx = TDIM * (gridDim.x * blockIdx.y + blockIdx.x) + TID;
-    register const uint idxp1_max = (idx+1)*MAX_THREADS;
-    register uint count0 = 0;
-    register uint count1 = 0;
 
-    if (idx < N/MAX_THREADS)
-    {
-        for (register uint i = idx*MAX_THREADS; i < idxp1_max; ++i)
-        {
-            if (values[i] & mask)
-                ++count1;
-            else
-                ++count0;
-        }
-
-        values_sum0[idx] = count0;
-        values_sum1[idx] = count1;
-    }
+    values_masks[idx] = (values[idx] & mask) ? 0 : 1;
 
     #undef TID
     #undef TDIM
 }
 
-__global__ static void Sum_PreScan(uint* __restrict__ values_sum,
-                                    uint* __restrict__ blocks_sum,
-                                    const uint N)
+__global__ void CUDA_Sum(uint* __restrict__ values,
+                         uint* __restrict__ aux)
 {
-    #define TID threadIdx.x
-    #define TDIM blockDim.x
+    #define tid threadIdx.x
+    #define tdim blockDim.x
+    #define bid (gridDim.x * blockIdx.y + blockIdx.x)
+    #define bdim (gridDim.x * gridDim.y)
 
-    register const uint idx = TDIM * (gridDim.x * blockIdx.y + blockIdx.x) + TID;
-    register const uint idxp1_max = (idx+1)*MAX_THREADS;
-    register uint count = 0;
+    const uint idx = tdim * bid + tid;
+    uint tmp_in0 = values[idx*2];
+    uint tmp_in1 = values[idx*2 + 1];
 
-    if (idx < N/MAX_THREADS)
-    {
-        for (register uint i = idx*MAX_THREADS; i < idxp1_max; ++i)
-            count += values_sum[i];
+    __shared__ uint shared[MAX_THREADS];
 
-        blocks_sum[idx] = count;
-    }
-
-    #undef TID
-    #undef TDIM
-}
-
-__global__ static void Sum_Scan(uint* __restrict__ values_sum,
-                                const uint N)
-{
-    #define TID threadIdx.x
-    #define TDIM blockDim.x
-
-    __shared__ uint sums[MAX_THREADS];
-
-    if (TID < N)
-        sums[TID] = values_sum[TID];
+    shared[tid] = tmp_in0 + tmp_in1;
     __syncthreads();
 
-    if (TID < N)
+    for (uint i = 1; i < tdim; i <<= 1)
     {
-        register uint count = 0;
-
-        for (register uint i = 0; i <= TID; ++i)
-            count += sums[i];
-
+        const uint x = (i<<1)-1;
+        if (tid >= i && (tid & x) == x)
+        {
+            shared[tid] += shared[tid - i];
+        }
         __syncthreads();
-
-        values_sum[TID] = count;
     }
 
-    #undef TID
-    #undef TDIM
+    if (tid == 0)
+        shared[tdim - 1] = 0;
+    __syncthreads();
+
+    for (uint i = tdim>>1; i >= 1; i >>= 1)
+    {
+        uint x = (i<<1)-1;
+        if (tid >= i && (tid & x) == x)
+        {
+            uint swp_tmp = shared[tid - i];
+            shared[tid - i] = shared[tid];
+            shared[tid] += swp_tmp;
+        }
+        __syncthreads();
+    }
+
+    values[idx*2] = tmp_in0 + shared[tid];
+    values[idx*2 + 1] = tmp_in0 + tmp_in1 + shared[tid];
+
+    __syncthreads();
+
+    if (tid == tdim-1 && aux)
+        aux[bid] = tmp_in0 + shared[tid] + tmp_in1;
+
+    #undef tid
+    #undef tdim
+    #undef bid
+    #undef bdim
 }
 
-__global__ static void Sum_PostScan(uint* __restrict__ values_sum,
-                                    uint* __restrict__ blocks_sum,
-                                    const uint N)
+__global__ void CUDA_PrefixSum(uint* __restrict__ values,
+                               uint* __restrict__ aux)
+{
+    #define tid threadIdx.x
+    #define tdim blockDim.x
+    #define bid (gridDim.x * blockIdx.y + blockIdx.x)
+    #define bdim (gridDim.x * gridDim.y)
+
+    const uint idx = tdim * bid + tid;
+    uint tmp_in0 = values[idx*2];
+    uint tmp_in1 = values[idx*2 + 1];
+
+    __shared__ uint shared[MAX_THREADS];
+
+    shared[tid] = tmp_in0 + tmp_in1;
+    __syncthreads();
+
+    for (uint i = 1; i < tdim; i <<= 1)
+    {
+        const uint x = (i<<1)-1;
+        if (tid >= i && (tid & x) == x)
+        {
+            shared[tid] += shared[tid - i];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0)
+        shared[tdim - 1] = 0;
+    __syncthreads();
+
+    for (uint i = tdim>>1; i >= 1; i >>= 1)
+    {
+        uint x = (i<<1)-1;
+        if (tid >= i && (tid & x) == x)
+        {
+            uint swp_tmp = shared[tid - i];
+            shared[tid - i] = shared[tid];
+            shared[tid] += swp_tmp;
+        }
+        __syncthreads();
+    }
+
+    values[idx*2] = shared[tid];
+    values[idx*2 + 1] = tmp_in0 + shared[tid];
+
+    __syncthreads();
+
+    if (tid == tdim-1 && aux)
+        aux[bid] = tmp_in0 + shared[tid] + tmp_in1;
+
+    #undef tid
+    #undef tdim
+    #undef bid
+    #undef bdim
+}
+
+__global__ void CUDA_PrefixSumUpdate(uint* __restrict__ values,
+                                     uint* __restrict__ aux)
+{
+    #define tid threadIdx.x
+    #define tdim blockDim.x
+
+    const uint bid = gridDim.x * blockIdx.y + blockIdx.x;
+    const uint idx = tdim * bid + tid;
+    __shared__ uint op;
+
+    if (tid == 0 && bid > 0)
+        op = aux[bid - 1];
+    __syncthreads();
+
+    if (bid > 0) {
+        atomicAdd(values+idx*2, op);
+        atomicAdd(values+idx*2+1, op);
+    }
+
+    #undef tid
+    #undef tdim
+}
+
+__global__ static void CUDA_RadixSort(int* __restrict__ values,
+                                      int* __restrict__ values_sorted,
+                                      uint* __restrict__ values_masks_psum,
+                                      const int mask)
 {
     #define TID threadIdx.x
     #define TDIM blockDim.x
-    register const uint bid = gridDim.x * blockIdx.y + blockIdx.x;
-    register const uint idx = TDIM * bid + TID;
-    register uint count;
+    #define BID (gridDim.x * blockIdx.y + blockIdx.x)
+    #define BDIM (gridDim.x * gridDim.y * TDIM)
 
-    __shared__ uint sums[MAX_THREADS];
+    const uint idx = TDIM * BID + TID;
+    const uint current = values[idx];
+    const uint current_masked = current & mask ? 0 : 1;
 
-    if (idx < N)
-        sums[TID] = values_sum[idx];
+    __shared__ uint max_psum;
+
+    if (TID == 0)
+        max_psum = values_masks_psum[BDIM-1] + (values[BDIM-1] & mask ? 0 : 1);
     __syncthreads();
 
-    if (idx < N)
-    {
-        if (TID < TDIM/2)
-        {
-            count = bid > 0 ? blocks_sum[bid-1] : 0;
-            for (register uint i = 0; i <= TID; ++i)
-                count += sums[i];
-        }
-        else
-        {
-            count = blocks_sum[bid];
-            for (register uint i = TID+1; i < TDIM; ++i)
-                count -= sums[i];
-        }
-    }
-    __syncthreads();
-
-    if (idx < N)
-        values_sum[idx] = count;
+    values_sorted[current_masked ? values_masks_psum[idx] : (idx + max_psum - values_masks_psum[idx])] = current;
 
     #undef TID
     #undef TDIM
 }
 
-__global__ static void Radix_Sort(int* __restrict__ values,
-                                  int* __restrict__ values_sorted,
-                                  uint* __restrict__ values_sum0,
-                                  uint* __restrict__ values_sum1,
-                                  const int mask, const uint N)
+void Sum_C(uint* d_mem_values,
+                 const uint N)
 {
-    #define TID threadIdx.x
-    #define TDIM blockDim.x
-    #define BDIM gridDim.x * blockDim.y
+    uint *d_mem_aux;
+    kdim v = get_kdim(N>>1);
 
-    register const uint bid = gridDim.x * blockIdx.y + blockIdx.x;
-    register const uint idx = TDIM * bid + TID;
+    //printf("blocks: x=%ld y=%ld, threads: %ld\n", v.dim_blocks.x, v.dim_blocks.y, v.num_threads);
 
-    __shared__ ushort masks[MAX_THREADS];
+    gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(uint)) );
+    CUDA_Sum<<<v.dim_blocks, v.num_threads>>>(d_mem_values, d_mem_aux);
+    cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
 
-    if (idx < N)
-        masks[TID] = (values[idx] & mask) ? 1 : 0;
-    __syncthreads();
-
-    if (idx < N)
-    {
-        register uint current = masks[TID];
-        register uint count = current ? values_sum0[BDIM-1] : 0;
-
-        if (TID < TDIM/2)
-        {
-            count += bid > 0 ? values_sum0[bid-1] : 0;
-            for (register uint i = 0; i < TID; ++i)
-                count += current ^ masks[i];
-        }
-        else
-        {
-            count += values_sum0[bid];
-            for (register uint i = TID; i < TDIM; ++i)
-                count -= current ^ masks[i];
-        }
-
-        values_sorted[idx] = count;
+    if (v.num_blocks > 1) {
+        Sum_C(d_mem_aux, v.num_blocks);
+        CUDA_PrefixSumUpdate<<<v.dim_blocks, v.num_threads>>>(d_mem_values, d_mem_aux);
+        cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
     }
 
-    #undef TID
-    #undef TDIM
-    #undef BDIM
+    cudaFree(d_mem_aux);
 }
+
+void PrefixSum_C(uint* d_mem_values,
+                 const uint N)
+{
+    uint *d_mem_aux;
+    kdim v = get_kdim(N>>1);
+
+    //printf("blocks: x=%ld y=%ld, threads: %ld\n", v.dim_blocks.x, v.dim_blocks.y, v.num_threads);
+
+    gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(uint)) );
+    CUDA_PrefixSum<<<v.dim_blocks, v.num_threads>>>(d_mem_values, d_mem_aux);
+    cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
+
+    if (v.num_blocks > 1) {
+        Sum_C(d_mem_aux, v.num_blocks);
+        CUDA_PrefixSumUpdate<<<v.dim_blocks, v.num_threads>>>(d_mem_values, d_mem_aux);
+        cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
+    }
+
+    cudaFree(d_mem_aux);
+}
+
 
 void inline Radix_Sort_C(int* d_mem_values,
                          int* d_mem_sorted,
                          const uint N)
 {
-    uint *d_mem_sum0, *d_mem_sum1;
-    gpuErrchk( cudaMalloc(&d_mem_sum0, N*sizeof(uint)/MAX_THREADS) );
-    gpuErrchk( cudaMalloc(&d_mem_sum1, N*sizeof(uint)/MAX_THREADS) );
+    uint *d_mem_masks;
+    kdim v = get_kdim(N);
+
+    gpuErrchk( cudaMalloc(&d_mem_masks, N * sizeof(uint)) );
+
+    //printf("blocks: x=%ld y=%ld, threads: %ld\n", v.dim_blocks.x, v.dim_blocks.y, v.num_threads);
 
     for (short bit = 0; bit < sizeof(int)*8; ++bit)
     {
         int mask = 1 << bit;
 
-        if (N <= MAX_THREADS) {
-            Radix_Sum<<<1, N/MAX_THREADS + 1>>>(d_mem_values, d_mem_sum0,  d_mem_sum1, mask, N);
-            cudaDeviceSynchronize();
+        /*int *h_mem0 = (int*)malloc(N * sizeof(int));
+        int *h_mem0x = (int*)malloc(N * sizeof(int));
+        uint *h_mem1 = (uint*)malloc(N * sizeof(uint));
+        uint *h_mem2 = (uint*)malloc(N * sizeof(uint));*/
 
-            Radix_Sort<<<1, N>>>(d_mem_values, d_mem_sorted, d_mem_sum0, d_mem_sum1, mask, N);
-            cudaDeviceSynchronize();
-        }
-        else
-        {
-            uint *d_mem_blocks_sum0, *d_mem_blocks_sum1;
-            dim3 blocks(1,1,1);
-            dim3 blocks2(1,1,1);
-            cudaStream_t stream1, stream2;
-            cudaStreamCreate(&stream1);
-            cudaStreamCreate(&stream2);
+        CUDA_RadixMask<<<v.dim_blocks, v.num_threads>>>(d_mem_values, d_mem_masks, mask);
+        cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
 
-            gpuErrchk( cudaMalloc(&d_mem_blocks_sum0, N*sizeof(uint)/MAX_THREADS/MAX_THREADS) );
-            gpuErrchk( cudaMalloc(&d_mem_blocks_sum1, N*sizeof(uint)/MAX_THREADS/MAX_THREADS) );
+        //copy_to_host_time(h_mem0, d_mem_values, N * sizeof(int));
+        //copy_to_host_time(h_mem1, d_mem_masks, N * sizeof(uint));
 
-            if(N <= MAX_DIM*MAX_THREADS)
-            {
-                blocks.x = N/MAX_THREADS + 1;
-                blocks2.x = N/MAX_THREADS/MAX_THREADS + 1;
-            }
-            else
-            {
-                blocks.x = MAX_DIM;
-                blocks.y = N/MAX_THREADS/MAX_DIM;
-                blocks2.x = N/MAX_THREADS/MAX_THREADS;
-            }
+        PrefixSum_C(d_mem_masks, N);
 
-            if(N < MAX_THREADS*MAX_THREADS)
-            {
-                Radix_Sum<<<1, blocks.x>>>(d_mem_values, d_mem_sum0, d_mem_sum1, mask, N);
-                cudaDeviceSynchronize();
+        //copy_to_host_time(h_mem2, d_mem_masks, N * sizeof(uint));
 
-                Sum_Scan<<<1, blocks.x, 0, stream1>>>(d_mem_sum0, blocks.x);
-                Sum_Scan<<<1, blocks.x, 0, stream2>>>(d_mem_sum1, blocks.x);
-                cudaDeviceSynchronize();
-            }
-            else
-            {
-                Radix_Sum<<<blocks2, MAX_THREADS>>>(d_mem_values, d_mem_sum0, d_mem_sum1, mask, N);
-                cudaDeviceSynchronize();
+        CUDA_RadixSort<<<v.dim_blocks, v.num_threads>>>(d_mem_values, d_mem_sorted, d_mem_masks, mask);
+        cudaDeviceSynchronize(); gpuErrchk( cudaPeekAtLastError() );
 
-                Sum_PreScan<<<1, blocks2.x, 0, stream1>>>(d_mem_sum0, d_mem_blocks_sum0, blocks.x*blocks.y);
-                Sum_PreScan<<<1, blocks2.x, 0, stream2>>>(d_mem_sum1, d_mem_blocks_sum1, blocks.x*blocks.y);
-                cudaDeviceSynchronize();
+        int *tmp = d_mem_values;
+        d_mem_values = d_mem_sorted;
+        d_mem_sorted = tmp;
 
-                Sum_Scan<<<1, blocks2.x, 0, stream1>>>(d_mem_blocks_sum0, blocks2.x);
-                Sum_Scan<<<1, blocks2.x, 0, stream2>>>(d_mem_blocks_sum1, blocks2.x);
-                cudaDeviceSynchronize();
+        //copy_to_host_time(h_mem0x, d_mem_values, N * sizeof(int));
 
-                Sum_PostScan<<<blocks2, MAX_THREADS, 0, stream1>>>(d_mem_sum0, d_mem_blocks_sum0, blocks.x*blocks.y);
-                Sum_PostScan<<<blocks2, MAX_THREADS, 0, stream2>>>(d_mem_sum1, d_mem_blocks_sum1, blocks.x*blocks.y);
-                cudaDeviceSynchronize();
-            }
 
-            Radix_Sort<<<blocks, MAX_THREADS>>>(d_mem_values, d_mem_sorted, d_mem_sum0, d_mem_sum1, mask, N);
-            cudaDeviceSynchronize();
+        //for (size_t i = 0; i < N; ++i)
+        //{
+            /*uint current = h_mem1[i];
+            uint max_psum = h_mem2[N-1];
 
-            cudaStreamDestroy(stream1);
-            cudaStreamDestroy(stream2);
-            cudaFree(d_mem_blocks_sum0);
-            cudaFree(d_mem_blocks_sum1);
-        }
+            uint n1 = h_mem2[i] - current;
+            uint n0 = i + max_psum - h_mem2[i];
+            printf("i:%d %d %d %d %d\n", i, h_mem0[i], h_mem0x[i], current, current ? n1 : n0);*/
+            //printf("i:%d %d %d\n", i, h_mem1[i], h_mem2[i]);
+        //}
+
+        //free(h_mem1);
+        //free(h_mem2);
+        //exit(0);
     }
-    cudaFree(d_mem_sum0);
-    cudaFree(d_mem_sum1);
+
+    cudaFree(d_mem_masks);
 }
 
 // program main
 int main(int argc, char** argv) {
     void *h_mem, *d_mem_values, *d_mem_sorted;
     size_t min_size = 1024UL; //1kB
-    size_t max_size = 1024UL*1024UL*256UL; //256MB
+    size_t max_size = 1024UL*1024UL*256; //256MB
 
     h_mem = malloc(max_size);
     assert(h_mem != NULL);
@@ -292,6 +317,7 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
 
         printf("after %ld %s\n", N, is_int_array_sorted((int*) h_mem, N, false) ? "true":"false");
+        //print_int_array((int*) h_mem, N);
     }
 
     cudaFree(d_mem_values);

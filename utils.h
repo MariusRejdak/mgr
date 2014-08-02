@@ -4,6 +4,10 @@
 #include <time.h>
 #include <assert.h>
 
+#define MAX_THREADS 512UL
+#define MAX_DIM 32768UL
+typedef unsigned int uint;
+typedef unsigned short ushort;
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
@@ -15,10 +19,45 @@ inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
    }
 }
 
+typedef struct kdim
+{
+    uint num_threads;
+    uint num_blocks;
+    dim3 dim_blocks;
+} kdim;
+
 struct counted_value {
     int v;
     int c;
 };
+
+kdim get_kdim(uint n) {
+    kdim v;
+    v.dim_blocks.x = 1;
+    v.dim_blocks.y = 1;
+    v.dim_blocks.z = 1;
+    v.num_blocks = 1;
+
+    if (n <= MAX_THREADS)
+    {
+        v.num_threads = n;
+    }
+    else if (n <= MAX_DIM * MAX_THREADS)
+    {
+        v.num_threads = MAX_THREADS;
+        v.dim_blocks.x = n / MAX_THREADS;
+        v.num_blocks = v.dim_blocks.x;
+    }
+    else
+    {
+        v.num_threads = MAX_THREADS;
+        v.dim_blocks.x = MAX_DIM;
+        v.dim_blocks.y = n / MAX_DIM / MAX_THREADS;
+        v.num_blocks = v.dim_blocks.x * v.dim_blocks.y;
+    }
+
+    return v;
+}
 
 void init_values_int(int *values, size_t length) {
     for (size_t i = 0; i < length; ++i)
