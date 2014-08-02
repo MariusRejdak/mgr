@@ -8,16 +8,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "utils.h"
+#include "cuda_utils.h"
 
 
-__global__ static void Bitonic_Sort(int* __restrict__ values,
-                                    const uint j,
-                                    const uint k,
-                                    const uint N)
+__global__ static void CUDA_BitonicSort(int* __restrict__ values,
+                                        const uint j, const uint k)
 {
-	const uint idx = gridDim.x * blockDim.x * blockIdx.y
-					 + blockDim.x * blockIdx.x
-					 + threadIdx.x;
+	const uint idx = TDIM * BID + TID;
 	const uint ixj = idx^j;
 
 	if (ixj > idx) {
@@ -32,14 +29,13 @@ __global__ static void Bitonic_Sort(int* __restrict__ values,
 	}
 }
 
-void inline Bitonic_Sort_C(int* d_mem,
-                           const uint N)
+__host__ void inline BitonicSort(int* d_mem, const uint N)
 {
 	kdim v = get_kdim(N);
 
 	for (uint k = 2; k <= N; k <<= 1) {
 		for (uint j = k >> 1; j > 0; j >>= 1) {
-			Bitonic_Sort<<<v.dim_blocks, v.num_threads>>>(d_mem, j, k, N);
+			CUDA_BitonicSort<<<v.dim_blocks, v.num_threads>>>(d_mem, j, k);
 			cudaDeviceSynchronize();
 		}
 	}
@@ -64,7 +60,7 @@ int main(int argc, char** argv) {
 		copy_to_device_time(d_mem, h_mem, size);
 		cudaDeviceSynchronize();
 
-		Bitonic_Sort_C((int*) d_mem, N);
+		BitonicSort((int*) d_mem, N);
 		gpuErrchk( cudaPeekAtLastError() );
 
 		copy_to_host_time(h_mem, d_mem, size);
