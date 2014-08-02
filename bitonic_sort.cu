@@ -9,11 +9,6 @@
 #include <stdlib.h>
 #include "utils.h"
 
-typedef unsigned int uint;
-typedef unsigned short ushort;
-
-#define MAX_THREADS 256UL
-#define MAX_DIM 32768UL
 
 __global__ static void Bitonic_Sort(int* __restrict__ values,
                                     const uint j,
@@ -40,28 +35,11 @@ __global__ static void Bitonic_Sort(int* __restrict__ values,
 void inline Bitonic_Sort_C(int* d_mem,
                            const uint N)
 {
-	int threads;
-	dim3 blocks(1,1,1);
-
-	if (N <= MAX_THREADS)
-	{
-		threads = N;
-	}
-	else if(N <= MAX_DIM*MAX_THREADS)
-	{
-		threads = MAX_THREADS;
-		blocks.x = N/MAX_THREADS;
-	}
-	else
-	{
-		threads = MAX_THREADS;
-		blocks.x = MAX_DIM;
-		blocks.y = N/MAX_THREADS/MAX_DIM;
-	}
+	kdim v = get_kdim(N);
 
 	for (uint k = 2; k <= N; k <<= 1) {
 		for (uint j = k >> 1; j > 0; j >>= 1) {
-			Bitonic_Sort<<<blocks, threads>>>(d_mem, j, k, N);
+			Bitonic_Sort<<<v.dim_blocks, v.num_threads>>>(d_mem, j, k, N);
 			cudaDeviceSynchronize();
 		}
 	}

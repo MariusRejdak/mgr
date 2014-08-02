@@ -106,12 +106,14 @@ void init_values_counted(struct counted_value *values, int length, int max_value
 }*/
 
 bool is_int_array_sorted(int *values, size_t length, bool reverse) {
-    bool sorted = true;
-    for (size_t i = 0; i < length-1; ++i)
+    for (size_t i = 0; i+1 < length-1; ++i)
     {
-        sorted = sorted && (!reverse ? (values[i] <= values[i+1]) : (values[i] >= values[i+1]));
+        if (!reverse ? (values[i] > values[i+1]) : (values[i] < values[i+1])) {
+            printf("%d %d %d\n", i, values[i], values[i+1]);
+            return false;
+        }
     }
-    return sorted;
+    return true;
 }
 
 bool is_long_array_sorted(long *values, size_t length, bool reverse) {
@@ -160,6 +162,7 @@ clock_t copy_to_device_time(void *dst, const void *src, size_t size) {
 
     t1 = clock();
     gpuErrchk(cudaMemcpy(dst, src, size, cudaMemcpyHostToDevice));
+    cudaDeviceSynchronize();
     t2 = clock();
 
     return t2 - t1;
@@ -170,6 +173,7 @@ clock_t copy_to_host_time(void *dst, const void *src, size_t size) {
 
     t1 = clock();
     gpuErrchk(cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost));
+    cudaDeviceSynchronize();
     t2 = clock();
 
     return t2 - t1;
