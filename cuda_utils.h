@@ -79,9 +79,9 @@ __host__ clock_t copy_to_host_time(void *dst, const void *src, size_t size)
 __global__ void CUDA_SumScan_Inclusive(uint* __restrict__ values,
                                        uint* __restrict__ aux)
 {
-    const uint idx = TDIM * BID + TID;
-    uint tmp_in0 = values[idx*2];
-    uint tmp_in1 = values[idx*2 + 1];
+    const uint idx = (TDIM * BID + TID) << 1;
+    const uint tmp_in0 = values[idx];
+    const uint tmp_in1 = values[idx + 1];
 
     extern __shared__ uint shared[];
 
@@ -110,8 +110,8 @@ __global__ void CUDA_SumScan_Inclusive(uint* __restrict__ values,
         __syncthreads();
     }
 
-    values[idx*2] = shared[TID] + tmp_in0;
-    values[idx*2 + 1] = shared[TID] + tmp_in0 + tmp_in1;
+    values[idx] = shared[TID] + tmp_in0;
+    values[idx + 1] = shared[TID] + tmp_in0 + tmp_in1;
 
     __syncthreads();
 
@@ -122,9 +122,9 @@ __global__ void CUDA_SumScan_Inclusive(uint* __restrict__ values,
 __global__ void CUDA_SumScan_Exclusive(uint* __restrict__ values,
                                        uint* __restrict__ aux)
 {
-    const uint idx = TDIM * BID + TID;
-    uint tmp_in0 = values[idx*2];
-    uint tmp_in1 = values[idx*2 + 1];
+    const uint idx = (TDIM * BID + TID) << 1;
+    const uint tmp_in0 = values[idx];
+    const uint tmp_in1 = values[idx + 1];
 
     extern __shared__ uint shared[];
 
@@ -153,8 +153,8 @@ __global__ void CUDA_SumScan_Exclusive(uint* __restrict__ values,
         __syncthreads();
     }
 
-    values[idx*2] = shared[TID];
-    values[idx*2 + 1] = shared[TID] + tmp_in0;
+    values[idx] = shared[TID];
+    values[idx + 1] = shared[TID] + tmp_in0;
 
     __syncthreads();
 
@@ -166,16 +166,9 @@ __global__ void CUDA_SumScanUpdate(uint* __restrict__ values,
                                    uint* __restrict__ aux)
 {
     const uint bid = gridDim.x * blockIdx.y + blockIdx.x;
-    const uint idx = TDIM * bid + TID;
-    __shared__ uint op;
 
-    if (TID == 0 && bid > 0)
-        op = aux[bid - 1];
-    __syncthreads();
-
-    if (bid > 0) {
-        atomicAdd(values+idx, op);
-    }
+    if (bid > 0)
+        values[TDIM * bid + TID] += aux[bid - 1];
 }
 
 __host__ void SumScan_Inclusive(uint* d_mem_values, const uint N)

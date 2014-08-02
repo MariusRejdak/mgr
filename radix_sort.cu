@@ -16,9 +16,9 @@ __global__ static void CUDA_RadixPrefixSum(int* __restrict__ values,
         uint* __restrict__ aux,
         const int mask)
 {
-    const uint idx = TDIM * BID + TID;
-    uint tmp_in0 = (values[idx*2] & mask) ? 0 : 1;
-    uint tmp_in1 = (values[idx*2 + 1] & mask) ? 0 : 1;
+    const uint idx = (TDIM * BID + TID) << 1;
+    const uint tmp_in0 = (values[idx] & mask) ? 0 : 1;
+    const uint tmp_in1 = (values[idx + 1] & mask) ? 0 : 1;
 
     extern __shared__ uint shared[];
 
@@ -47,8 +47,8 @@ __global__ static void CUDA_RadixPrefixSum(int* __restrict__ values,
         __syncthreads();
     }
 
-    values_masks[idx*2] = shared[TID];
-    values_masks[idx*2 + 1] = shared[TID] + tmp_in0;
+    values_masks[idx] = shared[TID];
+    values_masks[idx + 1] = shared[TID] + tmp_in0;
 
     __syncthreads();
 
