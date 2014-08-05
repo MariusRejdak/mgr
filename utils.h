@@ -15,6 +15,13 @@ struct counted_value {
     int c;
 };
 
+void swap(void **lhs, void **rhs)
+{
+    void *tmp = *lhs;
+    *lhs = *rhs;
+    *rhs = tmp;
+}
+
 void init_values_int(int *values, size_t length)
 {
     for (size_t i = 0; i < length; ++i) {

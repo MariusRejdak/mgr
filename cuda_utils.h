@@ -27,8 +27,25 @@ typedef struct kdim {
     dim3 dim_blocks;
 } kdim;
 
+kdim get_kdim_b(size_t blocks) {
+    kdim v;
+    v.num_threads = MAX_THREADS;
+    v.dim_blocks.y = 1;
+    v.dim_blocks.z = 1;
 
-kdim get_kdim(size_t n)
+    if (blocks <= MAX_DIM) {
+        v.dim_blocks.x = blocks;
+        v.num_blocks = blocks;
+    } else {
+        v.dim_blocks.x = MAX_DIM;
+        v.dim_blocks.y = blocks / MAX_DIM;
+        v.num_blocks = v.dim_blocks.x * v.dim_blocks.y;
+    }
+
+    return v;
+}
+
+kdim get_kdim_nt(size_t n, size_t max_threads)
 {
     kdim v;
     v.dim_blocks.x = 1;
@@ -36,20 +53,25 @@ kdim get_kdim(size_t n)
     v.dim_blocks.z = 1;
     v.num_blocks = 1;
 
-    if (n <= MAX_THREADS) {
+    if (n <= max_threads) {
         v.num_threads = n;
-    } else if (n <= MAX_DIM * MAX_THREADS) {
-        v.num_threads = MAX_THREADS;
-        v.dim_blocks.x = n / MAX_THREADS;
+    } else if (n <= MAX_DIM * max_threads) {
+        v.num_threads = max_threads;
+        v.dim_blocks.x = n / max_threads;
         v.num_blocks = v.dim_blocks.x;
     } else {
-        v.num_threads = MAX_THREADS;
+        v.num_threads = max_threads;
         v.dim_blocks.x = MAX_DIM;
-        v.dim_blocks.y = n / MAX_DIM / MAX_THREADS;
+        v.dim_blocks.y = n / MAX_DIM / max_threads;
         v.num_blocks = v.dim_blocks.x * v.dim_blocks.y;
     }
 
     return v;
+}
+
+kdim inline get_kdim(size_t n)
+{
+    return get_kdim_nt(n, MAX_THREADS);
 }
 
 __host__ clock_t copy_to_device_time(void *dst, const void *src, size_t size)

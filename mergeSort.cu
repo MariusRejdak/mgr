@@ -1,627 +1,204 @@
 /*
- * Copyright 1993-2014 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
+ * bitonic_sort.cu
  *
  */
 
+#include <math.h>
+#include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include "utils.h"
+#include "cuda_utils.h"
 
 
-
-/*
- * Based on "Designing efficient sorting algorithms for manycore GPUs"
- * by Nadathur Satish, Mark Harris, and Michael Garland
- * http://mgarland.org/files/papers/gpusort-ipdps09.pdf
- *
- * Victor Podlozhnyuk 09/24/2009
- */
-
-
-
-#include <assert.h>
-#include <helper_cuda.h>
-#include "mergeSort_common.h"
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Helper functions
-////////////////////////////////////////////////////////////////////////////////
-static inline __host__ __device__ uint iDivUp(uint a, uint b)
+__global__ static void CUDA_MergeSortShared(int* __restrict__ values,
+                                            int* __restrict__ values_sorted,
+                                            const uint dstMergeSize)
 {
-    return ((a % b) == 0) ? (a / b) : (a / b + 1);
-}
+    __shared__ int shared_a[MAX_THREADS];
+    __shared__ int shared_b[MAX_THREADS];
 
-static inline __host__ __device__ uint getSampleCount(uint dividend)
-{
-    return iDivUp(dividend, SAMPLE_STRIDE);
-}
+    const uint srcMergeSize = dstMergeSize>>1;
 
-#define W (sizeof(uint) * 8)
-static inline __device__ uint nextPowerOfTwo(uint x)
-{
-    /*
-        --x;
-        x |= x >> 1;
-        x |= x >> 2;
-        x |= x >> 4;
-        x |= x >> 8;
-        x |= x >> 16;
-        return ++x;
-    */
-    return 1U << (W - __clz(x - 1));
-}
+    values_sorted += TDIM * BID;
 
-template<uint sortDir> static inline __device__ uint binarySearchInclusive(uint val, uint *data, uint L, uint stride)
-{
-    if (L == 0)
-    {
-        return 0;
-    }
+    shared_a[TID] = values[TDIM * BID + TID];
+    shared_b[TID] = values[TDIM * BID + srcMergeSize + TID];
 
-    uint pos = 0;
+    __syncthreads();
 
-    for (; stride > 0; stride >>= 1)
-    {
-        uint newPos = umin(pos + stride, L);
+    if (TID == 0) {
+        uint i = 0;
+        uint a = 0;
+        uint b = 0;
 
-        if ((sortDir && (data[newPos - 1] <= val)) || (!sortDir && (data[newPos - 1] >= val)))
-        {
-            pos = newPos;
+        while (i < srcMergeSize) {
+            if (b >= srcMergeSize || (a < srcMergeSize && shared_a[a] < shared_b[b]))
+                values_sorted[i++] = shared_a[a++];
+            else
+                values_sorted[i++] = shared_b[b++];
+        }
+    } else if (TID == TDIM-1) {
+        int i = dstMergeSize-1;
+        int a = srcMergeSize-1;
+        int b = srcMergeSize-1;
+
+        while (i >= srcMergeSize) {
+            if (b < 0 || (a >= 0 && shared_a[a] >= shared_b[b]))
+                values_sorted[i--] = shared_a[a--];
+            else
+                values_sorted[i--] = shared_b[b--];
         }
     }
-
-    return pos;
 }
 
-template<uint sortDir> static inline __device__ uint binarySearchExclusive(uint val, uint *data, uint L, uint stride)
+__global__ static void CUDA_MergeSortGlobal(int* __restrict__ values,
+                                            int* __restrict__ values_sorted,
+                                            const uint dstMergeSize)
 {
-    if (L == 0)
-    {
-        return 0;
+    const uint srcMergeSize = dstMergeSize>>1;
+
+    //Is final merged
+    __shared__ bool merged;
+    __shared__ bool shared_need_a;
+    __shared__ bool shared_need_b;
+    __shared__ uint shared_a_i;
+    __shared__ uint shared_b_i;
+    __shared__ int shared_a[MAX_THREADS];
+    __shared__ int shared_b[MAX_THREADS];
+
+    uint a_i = 0;
+    uint b_i = 0;
+    uint i = 0;
+
+    int *values_a = values + (dstMergeSize * BID);
+    int *values_b = values + (dstMergeSize * BID) + srcMergeSize;
+
+    values_sorted += dstMergeSize * BID;
+
+    if (TID == 0) {
+        merged = false;
+        shared_a_i = 0;
+        shared_b_i = 0;
+        shared_need_a = true;
+        shared_need_b = true;
     }
 
-    uint pos = 0;
+    __syncthreads();
 
-    for (; stride > 0; stride >>= 1)
-    {
-        uint newPos = umin(pos + stride, L);
-
-        if ((sortDir && (data[newPos - 1] < val)) || (!sortDir && (data[newPos - 1] > val)))
-        {
-            pos = newPos;
+   while (!merged) {
+        if (shared_need_a && shared_a_i+TID < srcMergeSize) {
+            shared_a[TID] = values_a[TID+shared_a_i];
         }
-    }
-
-    return pos;
-}
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Bottom-level merge sort (binary search-based)
-////////////////////////////////////////////////////////////////////////////////
-template<uint sortDir> __global__ void mergeSortSharedKernel(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint arrayLength
-)
-{
-    __shared__ uint s_key[SHARED_SIZE_LIMIT];
-    __shared__ uint s_val[SHARED_SIZE_LIMIT];
-
-    d_SrcKey += blockIdx.x * SHARED_SIZE_LIMIT + threadIdx.x;
-    d_SrcVal += blockIdx.x * SHARED_SIZE_LIMIT + threadIdx.x;
-    d_DstKey += blockIdx.x * SHARED_SIZE_LIMIT + threadIdx.x;
-    d_DstVal += blockIdx.x * SHARED_SIZE_LIMIT + threadIdx.x;
-    s_key[threadIdx.x +                       0] = d_SrcKey[                      0];
-    s_val[threadIdx.x +                       0] = d_SrcVal[                      0];
-    s_key[threadIdx.x + (SHARED_SIZE_LIMIT / 2)] = d_SrcKey[(SHARED_SIZE_LIMIT / 2)];
-    s_val[threadIdx.x + (SHARED_SIZE_LIMIT / 2)] = d_SrcVal[(SHARED_SIZE_LIMIT / 2)];
-
-    for (uint stride = 1; stride < arrayLength; stride <<= 1)
-    {
-        uint     lPos = threadIdx.x & (stride - 1);
-        uint *baseKey = s_key + 2 * (threadIdx.x - lPos);
-        uint *baseVal = s_val + 2 * (threadIdx.x - lPos);
+        if (shared_need_b && shared_b_i+TID < srcMergeSize) {
+            shared_b[TID] = values_b[TID+shared_b_i];
+        }
 
         __syncthreads();
-        uint keyA = baseKey[lPos +      0];
-        uint valA = baseVal[lPos +      0];
-        uint keyB = baseKey[lPos + stride];
-        uint valB = baseVal[lPos + stride];
-        uint posA = binarySearchExclusive<sortDir>(keyA, baseKey + stride, stride, stride) + lPos;
-        uint posB = binarySearchInclusive<sortDir>(keyB, baseKey +      0, stride, stride) + lPos;
+        if (TID == 0) {
+            if (shared_need_a) {
+                shared_need_a = false;
+                shared_a_i += TDIM;
+                a_i = 0;
+            }
+            if (shared_need_b) {
+                shared_need_b = false;
+                shared_b_i += TDIM;
+                b_i = 0;
+            }
 
+            while (a_i < TDIM && b_i < TDIM) {
+                if (shared_a[a_i] < shared_b[b_i]) {
+                    values_sorted[i++] = shared_a[a_i++];
+                }
+                else {
+                    values_sorted[i++] = shared_b[b_i++];
+                }
+            }
+
+            if (shared_a_i >= srcMergeSize) {
+                while (b_i < TDIM) {
+                    values_sorted[i++] = shared_b[b_i++];
+                }
+            }
+            if (shared_b_i >= srcMergeSize) {
+                while (a_i < TDIM) {
+                    values_sorted[i++] = shared_a[a_i++];
+                }
+            }
+
+            if (a_i >= TDIM && shared_a_i < srcMergeSize) {
+                shared_need_a = true;
+            }
+            if (b_i >= TDIM && shared_b_i < srcMergeSize) {
+                shared_need_b = true;
+            }
+
+            if (i >= dstMergeSize)
+                merged = true;
+        }
         __syncthreads();
-        baseKey[posA] = keyA;
-        baseVal[posA] = valA;
-        baseKey[posB] = keyB;
-        baseVal[posB] = valB;
-    }
-
-    __syncthreads();
-    d_DstKey[                      0] = s_key[threadIdx.x +                       0];
-    d_DstVal[                      0] = s_val[threadIdx.x +                       0];
-    d_DstKey[(SHARED_SIZE_LIMIT / 2)] = s_key[threadIdx.x + (SHARED_SIZE_LIMIT / 2)];
-    d_DstVal[(SHARED_SIZE_LIMIT / 2)] = s_val[threadIdx.x + (SHARED_SIZE_LIMIT / 2)];
-}
-
-static void mergeSortShared(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint batchSize,
-    uint arrayLength,
-    uint sortDir
-)
-{
-    if (arrayLength < 2)
-    {
-        return;
-    }
-
-    assert(SHARED_SIZE_LIMIT % arrayLength == 0);
-    assert(((batchSize * arrayLength) % SHARED_SIZE_LIMIT) == 0);
-    uint  blockCount = batchSize * arrayLength / SHARED_SIZE_LIMIT;
-    uint threadCount = SHARED_SIZE_LIMIT / 2;
-
-    if (sortDir)
-    {
-        mergeSortSharedKernel<1U><<<blockCount, threadCount>>>(d_DstKey, d_DstVal, d_SrcKey, d_SrcVal, arrayLength);
-        getLastCudaError("mergeSortShared<1><<<>>> failed\n");
-    }
-    else
-    {
-        mergeSortSharedKernel<0U><<<blockCount, threadCount>>>(d_DstKey, d_DstVal, d_SrcKey, d_SrcVal, arrayLength);
-        getLastCudaError("mergeSortShared<0><<<>>> failed\n");
     }
 }
 
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Merge step 1: generate sample ranks
-////////////////////////////////////////////////////////////////////////////////
-template<uint sortDir> __global__ void generateSampleRanksKernel(
-    uint *d_RanksA,
-    uint *d_RanksB,
-    uint *d_SrcKey,
-    uint stride,
-    uint N,
-    uint threadCount
-)
+__host__ void inline MergeSort(int** d_mem_values,
+                               int** d_mem_sorted,
+                               const uint N)
 {
-    uint pos = blockIdx.x * blockDim.x + threadIdx.x;
+    for (uint i = 2; i <= N; i <<= 1) {
 
-    if (pos >= threadCount)
-    {
-        return;
-    }
-
-    const uint           i = pos & ((stride / SAMPLE_STRIDE) - 1);
-    const uint segmentBase = (pos - i) * (2 * SAMPLE_STRIDE);
-    d_SrcKey += segmentBase;
-    d_RanksA += segmentBase / SAMPLE_STRIDE;
-    d_RanksB += segmentBase / SAMPLE_STRIDE;
-
-    const uint segmentElementsA = stride;
-    const uint segmentElementsB = umin(stride, N - segmentBase - stride);
-    const uint  segmentSamplesA = getSampleCount(segmentElementsA);
-    const uint  segmentSamplesB = getSampleCount(segmentElementsB);
-
-    if (i < segmentSamplesA)
-    {
-        d_RanksA[i] = i * SAMPLE_STRIDE;
-        d_RanksB[i] = binarySearchExclusive<sortDir>(
-                          d_SrcKey[i * SAMPLE_STRIDE], d_SrcKey + stride,
-                          segmentElementsB, nextPowerOfTwo(segmentElementsB)
-                      );
-    }
-
-    if (i < segmentSamplesB)
-    {
-        d_RanksB[(stride / SAMPLE_STRIDE) + i] = i * SAMPLE_STRIDE;
-        d_RanksA[(stride / SAMPLE_STRIDE) + i] = binarySearchInclusive<sortDir>(
-                                                     d_SrcKey[stride + i * SAMPLE_STRIDE], d_SrcKey + 0,
-                                                     segmentElementsA, nextPowerOfTwo(segmentElementsA)
-                                                 );
-    }
-}
-
-static void generateSampleRanks(
-    uint *d_RanksA,
-    uint *d_RanksB,
-    uint *d_SrcKey,
-    uint stride,
-    uint N,
-    uint sortDir
-)
-{
-    uint lastSegmentElements = N % (2 * stride);
-    uint         threadCount = (lastSegmentElements > stride) ? (N + 2 * stride - lastSegmentElements) / (2 * SAMPLE_STRIDE) : (N - lastSegmentElements) / (2 * SAMPLE_STRIDE);
-
-    if (sortDir)
-    {
-        generateSampleRanksKernel<1U><<<iDivUp(threadCount, 256), 256>>>(d_RanksA, d_RanksB, d_SrcKey, stride, N, threadCount);
-        getLastCudaError("generateSampleRanksKernel<1U><<<>>> failed\n");
-    }
-    else
-    {
-        generateSampleRanksKernel<0U><<<iDivUp(threadCount, 256), 256>>>(d_RanksA, d_RanksB, d_SrcKey, stride, N, threadCount);
-        getLastCudaError("generateSampleRanksKernel<0U><<<>>> failed\n");
-    }
-}
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Merge step 2: generate sample ranks and indices
-////////////////////////////////////////////////////////////////////////////////
-__global__ void mergeRanksAndIndicesKernel(
-    uint *d_Limits,
-    uint *d_Ranks,
-    uint stride,
-    uint N,
-    uint threadCount
-)
-{
-    uint pos = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (pos >= threadCount)
-    {
-        return;
-    }
-
-    const uint           i = pos & ((stride / SAMPLE_STRIDE) - 1);
-    const uint segmentBase = (pos - i) * (2 * SAMPLE_STRIDE);
-    d_Ranks  += (pos - i) * 2;
-    d_Limits += (pos - i) * 2;
-
-    const uint segmentElementsA = stride;
-    const uint segmentElementsB = umin(stride, N - segmentBase - stride);
-    const uint  segmentSamplesA = getSampleCount(segmentElementsA);
-    const uint  segmentSamplesB = getSampleCount(segmentElementsB);
-
-    if (i < segmentSamplesA)
-    {
-        uint dstPos = binarySearchExclusive<1U>(d_Ranks[i], d_Ranks + segmentSamplesA, segmentSamplesB, nextPowerOfTwo(segmentSamplesB)) + i;
-        d_Limits[dstPos] = d_Ranks[i];
-    }
-
-    if (i < segmentSamplesB)
-    {
-        uint dstPos = binarySearchInclusive<1U>(d_Ranks[segmentSamplesA + i], d_Ranks, segmentSamplesA, nextPowerOfTwo(segmentSamplesA)) + i;
-        d_Limits[dstPos] = d_Ranks[segmentSamplesA + i];
-    }
-}
-
-static void mergeRanksAndIndices(
-    uint *d_LimitsA,
-    uint *d_LimitsB,
-    uint *d_RanksA,
-    uint *d_RanksB,
-    uint stride,
-    uint N
-)
-{
-    uint lastSegmentElements = N % (2 * stride);
-    uint         threadCount = (lastSegmentElements > stride) ? (N + 2 * stride - lastSegmentElements) / (2 * SAMPLE_STRIDE) : (N - lastSegmentElements) / (2 * SAMPLE_STRIDE);
-
-    mergeRanksAndIndicesKernel<<<iDivUp(threadCount, 256), 256>>>(
-        d_LimitsA,
-        d_RanksA,
-        stride,
-        N,
-        threadCount
-    );
-    getLastCudaError("mergeRanksAndIndicesKernel(A)<<<>>> failed\n");
-
-    mergeRanksAndIndicesKernel<<<iDivUp(threadCount, 256), 256>>>(
-        d_LimitsB,
-        d_RanksB,
-        stride,
-        N,
-        threadCount
-    );
-    getLastCudaError("mergeRanksAndIndicesKernel(B)<<<>>> failed\n");
-}
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Merge step 3: merge elementary intervals
-////////////////////////////////////////////////////////////////////////////////
-template<uint sortDir> inline __device__ void merge(
-    uint *dstKey,
-    uint *dstVal,
-    uint *srcAKey,
-    uint *srcAVal,
-    uint *srcBKey,
-    uint *srcBVal,
-    uint lenA,
-    uint nPowTwoLenA,
-    uint lenB,
-    uint nPowTwoLenB
-)
-{
-    uint keyA, valA, keyB, valB, dstPosA, dstPosB;
-
-    if (threadIdx.x < lenA)
-    {
-        keyA = srcAKey[threadIdx.x];
-        valA = srcAVal[threadIdx.x];
-        dstPosA = binarySearchExclusive<sortDir>(keyA, srcBKey, lenB, nPowTwoLenB) + threadIdx.x;
-    }
-
-    if (threadIdx.x < lenB)
-    {
-        keyB = srcBKey[threadIdx.x];
-        valB = srcBVal[threadIdx.x];
-        dstPosB = binarySearchInclusive<sortDir>(keyB, srcAKey, lenA, nPowTwoLenA) + threadIdx.x;
-    }
-
-    __syncthreads();
-
-    if (threadIdx.x < lenA)
-    {
-        dstKey[dstPosA] = keyA;
-        dstVal[dstPosA] = valA;
-    }
-
-    if (threadIdx.x < lenB)
-    {
-        dstKey[dstPosB] = keyB;
-        dstVal[dstPosB] = valB;
-    }
-}
-
-template<uint sortDir> __global__ void mergeElementaryIntervalsKernel(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint *d_LimitsA,
-    uint *d_LimitsB,
-    uint stride,
-    uint N
-)
-{
-    __shared__ uint s_key[2 * SAMPLE_STRIDE];
-    __shared__ uint s_val[2 * SAMPLE_STRIDE];
-
-    const uint   intervalI = blockIdx.x & ((2 * stride) / SAMPLE_STRIDE - 1);
-    const uint segmentBase = (blockIdx.x - intervalI) * SAMPLE_STRIDE;
-    d_SrcKey += segmentBase;
-    d_SrcVal += segmentBase;
-    d_DstKey += segmentBase;
-    d_DstVal += segmentBase;
-
-    //Set up threadblock-wide parameters
-    __shared__ uint startSrcA, startSrcB, lenSrcA, lenSrcB, startDstA, startDstB;
-
-    if (threadIdx.x == 0)
-    {
-        uint segmentElementsA = stride;
-        uint segmentElementsB = umin(stride, N - segmentBase - stride);
-        uint  segmentSamplesA = getSampleCount(segmentElementsA);
-        uint  segmentSamplesB = getSampleCount(segmentElementsB);
-        uint   segmentSamples = segmentSamplesA + segmentSamplesB;
-
-        startSrcA    = d_LimitsA[blockIdx.x];
-        startSrcB    = d_LimitsB[blockIdx.x];
-        uint endSrcA = (intervalI + 1 < segmentSamples) ? d_LimitsA[blockIdx.x + 1] : segmentElementsA;
-        uint endSrcB = (intervalI + 1 < segmentSamples) ? d_LimitsB[blockIdx.x + 1] : segmentElementsB;
-        lenSrcA      = endSrcA - startSrcA;
-        lenSrcB      = endSrcB - startSrcB;
-        startDstA    = startSrcA + startSrcB;
-        startDstB    = startDstA + lenSrcA;
-    }
-
-    //Load main input data
-    __syncthreads();
-
-    if (threadIdx.x < lenSrcA)
-    {
-        s_key[threadIdx.x +             0] = d_SrcKey[0 + startSrcA + threadIdx.x];
-        s_val[threadIdx.x +             0] = d_SrcVal[0 + startSrcA + threadIdx.x];
-    }
-
-    if (threadIdx.x < lenSrcB)
-    {
-        s_key[threadIdx.x + SAMPLE_STRIDE] = d_SrcKey[stride + startSrcB + threadIdx.x];
-        s_val[threadIdx.x + SAMPLE_STRIDE] = d_SrcVal[stride + startSrcB + threadIdx.x];
-    }
-
-    //Merge data in shared memory
-    __syncthreads();
-    merge<sortDir>(
-        s_key,
-        s_val,
-        s_key + 0,
-        s_val + 0,
-        s_key + SAMPLE_STRIDE,
-        s_val + SAMPLE_STRIDE,
-        lenSrcA, SAMPLE_STRIDE,
-        lenSrcB, SAMPLE_STRIDE
-    );
-
-    //Store merged data
-    __syncthreads();
-
-    if (threadIdx.x < lenSrcA)
-    {
-        d_DstKey[startDstA + threadIdx.x] = s_key[threadIdx.x];
-        d_DstVal[startDstA + threadIdx.x] = s_val[threadIdx.x];
-    }
-
-    if (threadIdx.x < lenSrcB)
-    {
-        d_DstKey[startDstB + threadIdx.x] = s_key[lenSrcA + threadIdx.x];
-        d_DstVal[startDstB + threadIdx.x] = s_val[lenSrcA + threadIdx.x];
-    }
-}
-
-static void mergeElementaryIntervals(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint *d_LimitsA,
-    uint *d_LimitsB,
-    uint stride,
-    uint N,
-    uint sortDir
-)
-{
-    uint lastSegmentElements = N % (2 * stride);
-    uint          mergePairs = (lastSegmentElements > stride) ? getSampleCount(N) : (N - lastSegmentElements) / SAMPLE_STRIDE;
-
-    if (sortDir)
-    {
-        mergeElementaryIntervalsKernel<1U><<<mergePairs, SAMPLE_STRIDE>>>(
-            d_DstKey,
-            d_DstVal,
-            d_SrcKey,
-            d_SrcVal,
-            d_LimitsA,
-            d_LimitsB,
-            stride,
-            N
-        );
-        getLastCudaError("mergeElementaryIntervalsKernel<1> failed\n");
-    }
-    else
-    {
-        mergeElementaryIntervalsKernel<0U><<<mergePairs, SAMPLE_STRIDE>>>(
-            d_DstKey,
-            d_DstVal,
-            d_SrcKey,
-            d_SrcVal,
-            d_LimitsA,
-            d_LimitsB,
-            stride,
-            N
-        );
-        getLastCudaError("mergeElementaryIntervalsKernel<0> failed\n");
-    }
-}
-
-
-
-extern "C" void bitonicSortShared(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint batchSize,
-    uint arrayLength,
-    uint sortDir
-);
-
-extern "C" void bitonicMergeElementaryIntervals(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint *d_LimitsA,
-    uint *d_LimitsB,
-    uint stride,
-    uint N,
-    uint sortDir
-);
-
-
-
-static uint *d_RanksA, *d_RanksB, *d_LimitsA, *d_LimitsB;
-static const uint MAX_SAMPLE_COUNT = 32768;
-
-extern "C" void initMergeSort(void)
-{
-    checkCudaErrors(cudaMalloc((void **)&d_RanksA,  MAX_SAMPLE_COUNT * sizeof(uint)));
-    checkCudaErrors(cudaMalloc((void **)&d_RanksB,  MAX_SAMPLE_COUNT * sizeof(uint)));
-    checkCudaErrors(cudaMalloc((void **)&d_LimitsA, MAX_SAMPLE_COUNT * sizeof(uint)));
-    checkCudaErrors(cudaMalloc((void **)&d_LimitsB, MAX_SAMPLE_COUNT * sizeof(uint)));
-}
-
-extern "C" void closeMergeSort(void)
-{
-    checkCudaErrors(cudaFree(d_RanksA));
-    checkCudaErrors(cudaFree(d_RanksB));
-    checkCudaErrors(cudaFree(d_LimitsB));
-    checkCudaErrors(cudaFree(d_LimitsA));
-}
-
-extern "C" void mergeSort(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_BufKey,
-    uint *d_BufVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint N,
-    uint sortDir
-)
-{
-    uint stageCount = 0;
-
-    for (uint stride = SHARED_SIZE_LIMIT; stride < N; stride <<= 1, stageCount++);
-
-    uint *ikey, *ival, *okey, *oval;
-
-    if (stageCount & 1)
-    {
-        ikey = d_BufKey;
-        ival = d_BufVal;
-        okey = d_DstKey;
-        oval = d_DstVal;
-    }
-    else
-    {
-        ikey = d_DstKey;
-        ival = d_DstVal;
-        okey = d_BufKey;
-        oval = d_BufVal;
-    }
-
-    assert(N <= (SAMPLE_STRIDE * MAX_SAMPLE_COUNT));
-    assert(N % SHARED_SIZE_LIMIT == 0);
-    mergeSortShared(ikey, ival, d_SrcKey, d_SrcVal, N / SHARED_SIZE_LIMIT, SHARED_SIZE_LIMIT, sortDir);
-
-    for (uint stride = SHARED_SIZE_LIMIT; stride < N; stride <<= 1)
-    {
-        uint lastSegmentElements = N % (2 * stride);
-
-        //Find sample ranks and prepare for limiters merge
-        generateSampleRanks(d_RanksA, d_RanksB, ikey, stride, N, sortDir);
-
-        //Merge ranks and indices
-        mergeRanksAndIndices(d_LimitsA, d_LimitsB, d_RanksA, d_RanksB, stride, N);
-
-        //Merge elementary intervals
-        mergeElementaryIntervals(okey, oval, ikey, ival, d_LimitsA, d_LimitsB, stride, N, sortDir);
-
-        if (lastSegmentElements <= stride)
-        {
-            //Last merge segment consists of a single array which just needs to be passed through
-            checkCudaErrors(cudaMemcpy(okey + (N - lastSegmentElements), ikey + (N - lastSegmentElements), lastSegmentElements * sizeof(uint), cudaMemcpyDeviceToDevice));
-            checkCudaErrors(cudaMemcpy(oval + (N - lastSegmentElements), ival + (N - lastSegmentElements), lastSegmentElements * sizeof(uint), cudaMemcpyDeviceToDevice));
+        if (i <= MAX_THREADS) {
+            kdim v = get_kdim_nt(N, i);
+            CUDA_MergeSortShared<<<v.dim_blocks, v.num_threads>>>(*d_mem_values, *d_mem_sorted, i);
+        }
+        else {
+            kdim v = get_kdim_b(N/i);
+            CUDA_MergeSortGlobal<<<v.dim_blocks, v.num_threads>>>(*d_mem_values, *d_mem_sorted, i);
         }
 
-        uint *t;
-        t = ikey;
-        ikey = okey;
-        okey = t;
-        t = ival;
-        ival = oval;
-        oval = t;
+        swap((void**)d_mem_values, (void**)d_mem_sorted);
+
+        cudaDeviceSynchronize();
+        gpuErrchk( cudaPeekAtLastError() );
     }
+
+    swap((void**)d_mem_values, (void**)d_mem_sorted);
 }
 
+// program main
+int main(int argc, char** argv)
+{
+    void *h_mem, *d_mem_values, *d_mem_sorted;
+    size_t min_size = 1024UL; //1kB
+    size_t max_size = 1024UL*2; //256MB
+
+    h_mem = malloc(max_size);
+    assert(h_mem != NULL);
+    gpuErrchk( cudaMalloc(&d_mem_values, max_size) );
+    gpuErrchk( cudaMalloc(&d_mem_sorted, max_size) );
+
+    srand(time(NULL));
+
+    for(size_t size = min_size; size <= max_size; size <<= 1) {
+        size_t N = size/sizeof(int);
+        init_values_int((int*) h_mem, N);
+
+        copy_to_device_time(d_mem_values, h_mem, size);
+        cudaDeviceSynchronize();
+
+        MergeSort((int**) &d_mem_values, (int**) &d_mem_sorted, N);
+        cudaDeviceSynchronize();
+        gpuErrchk( cudaPeekAtLastError() );
+
+        copy_to_host_time(h_mem, d_mem_sorted, size);
+        cudaDeviceSynchronize();
+
+        printf("after %ld %s\n", N, is_int_array_sorted((int*) h_mem, N, false) ? "true":"false");
+    }
+
+    cudaFree(d_mem_values);
+    cudaFree(d_mem_sorted);
+    free(h_mem);
+
+    return 0;
+}
