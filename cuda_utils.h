@@ -113,8 +113,6 @@ __global__ void CUDA_SumScan_Inclusive(uint* __restrict__ values,
     values[idx] = shared[TID] + tmp_in0;
     values[idx + 1] = shared[TID] + tmp_in0 + tmp_in1;
 
-    __syncthreads();
-
     if (TID == TDIM-1 && aux)
         aux[BID] = tmp_in0 + shared[TID] + tmp_in1;
 }
@@ -156,8 +154,6 @@ __global__ void CUDA_SumScan_Exclusive(uint* __restrict__ values,
     values[idx] = shared[TID];
     values[idx + 1] = shared[TID] + tmp_in0;
 
-    __syncthreads();
-
     if (TID == TDIM-1 && aux)
         aux[BID] = tmp_in0 + shared[TID] + tmp_in1;
 }
@@ -165,7 +161,7 @@ __global__ void CUDA_SumScan_Exclusive(uint* __restrict__ values,
 __global__ void CUDA_SumScanUpdate(uint* __restrict__ values,
                                    uint* __restrict__ aux)
 {
-    const uint bid = gridDim.x * blockIdx.y + blockIdx.x;
+    const uint bid = BID;
 
     if (bid > 0)
         values[TDIM * bid + TID] += aux[bid - 1];

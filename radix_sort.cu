@@ -50,8 +50,6 @@ __global__ static void CUDA_RadixPrefixSum(int* __restrict__ values,
     values_masks[idx] = shared[TID];
     values_masks[idx + 1] = shared[TID] + tmp_in0;
 
-    __syncthreads();
-
     if (TID == TDIM-1)
         aux[BID] = tmp_in0 + shared[TID] + tmp_in1;
 }
