@@ -1,54 +1,27 @@
 /*
- * Copyright 1993-2014 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
+ * bitonic_sort.cu
  *
  */
 
+#include <math.h>
+#include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include "utils.h"
+#include "cuda_utils.h"
 
 
-//Based on http://www.iti.fh-flensburg.de/lang/algorithmen/sortieren/networks/oemen.htm
-
-
-
-#include <assert.h>
-#include <helper_cuda.h>
-#include "sortingNetworks_common.h"
-#include "sortingNetworks_common.cuh"
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Monolithic Bacther's sort kernel for short arrays fitting into shared memory
-////////////////////////////////////////////////////////////////////////////////
-__global__ void oddEvenMergeSortShared(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint arrayLength,
-    uint dir
-)
+__global__ static void CUDA_OddEvenMergeSortShared(int* __restrict__ values,
+                                                   uint N)
 {
-    //Shared memory storage for one or more small vectors
-    __shared__ uint s_key[SHARED_SIZE_LIMIT];
-    __shared__ uint s_val[SHARED_SIZE_LIMIT];
+    const uint idx = TDIM * BID * 2 + TID;
+    extern __shared__ int s_v[];
 
-    //Offset to the beginning of subbatch and load data
-    d_SrcKey += blockIdx.x * SHARED_SIZE_LIMIT + threadIdx.x;
-    d_SrcVal += blockIdx.x * SHARED_SIZE_LIMIT + threadIdx.x;
-    d_DstKey += blockIdx.x * SHARED_SIZE_LIMIT + threadIdx.x;
-    d_DstVal += blockIdx.x * SHARED_SIZE_LIMIT + threadIdx.x;
-    s_key[threadIdx.x +                       0] = d_SrcKey[                      0];
-    s_val[threadIdx.x +                       0] = d_SrcVal[                      0];
-    s_key[threadIdx.x + (SHARED_SIZE_LIMIT / 2)] = d_SrcKey[(SHARED_SIZE_LIMIT / 2)];
-    s_val[threadIdx.x + (SHARED_SIZE_LIMIT / 2)] = d_SrcVal[(SHARED_SIZE_LIMIT / 2)];
+    s_v[TID] = values[idx];
+    s_v[TID+TDIM] = values[idx+TDIM];
+    __syncthreads();
 
-    for (uint size = 2; size <= arrayLength; size <<= 1)
+    for (uint size = 2; size <= N; size <<= 1)
     {
         uint stride = size / 2;
         uint offset = threadIdx.x & (stride - 1);
@@ -56,11 +29,11 @@ __global__ void oddEvenMergeSortShared(
         {
             __syncthreads();
             uint pos = 2 * threadIdx.x - (threadIdx.x & (stride - 1));
-            Comparator(
-                s_key[pos +      0], s_val[pos +      0],
-                s_key[pos + stride], s_val[pos + stride],
-                dir
-            );
+            if(s_v[pos] > s_v[pos + stride]) {
+                int tmp = s_v[pos];
+                s_v[pos] = s_v[pos + stride];
+                s_v[pos + stride] = tmp;
+            }
             stride >>= 1;
         }
 
@@ -70,134 +43,113 @@ __global__ void oddEvenMergeSortShared(
             uint pos = 2 * threadIdx.x - (threadIdx.x & (stride - 1));
 
             if (offset >= stride)
-                Comparator(
-                    s_key[pos - stride], s_val[pos - stride],
-                    s_key[pos +      0], s_val[pos +      0],
-                    dir
-                );
+                if(s_v[pos - stride] > s_v[pos]) {
+                    int tmp = s_v[pos - stride];
+                    s_v[pos - stride] = s_v[pos];
+                    s_v[pos] = tmp;
+                }
         }
     }
 
     __syncthreads();
-    d_DstKey[                      0] = s_key[threadIdx.x +                       0];
-    d_DstVal[                      0] = s_val[threadIdx.x +                       0];
-    d_DstKey[(SHARED_SIZE_LIMIT / 2)] = s_key[threadIdx.x + (SHARED_SIZE_LIMIT / 2)];
-    d_DstVal[(SHARED_SIZE_LIMIT / 2)] = s_val[threadIdx.x + (SHARED_SIZE_LIMIT / 2)];
+
+    values[idx] = s_v[TID];
+    values[idx+TDIM] = s_v[TID+TDIM];
 }
 
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Odd-even merge sort iteration kernel
-// for large arrays (not fitting into shared memory)
-////////////////////////////////////////////////////////////////////////////////
-__global__ void oddEvenMergeGlobal(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint arrayLength,
-    uint size,
-    uint stride,
-    uint dir
-)
+__global__ static void CUDA_OddEvenMergeSortGlobal(int* __restrict__ values,
+                                                   uint size,
+                                                   uint stride)
 {
-    uint global_comparatorI = blockIdx.x * blockDim.x + threadIdx.x;
+    const uint idx = TDIM * BID + TID;
 
     //Odd-even merge
-    uint pos = 2 * global_comparatorI - (global_comparatorI & (stride - 1));
+    uint pos = 2 * idx - (idx & (stride - 1));
 
     if (stride < size / 2)
     {
-        uint offset = global_comparatorI & ((size / 2) - 1);
+        uint offset = idx & ((size / 2) - 1);
 
         if (offset >= stride)
         {
-            uint keyA = d_SrcKey[pos - stride];
-            uint valA = d_SrcVal[pos - stride];
-            uint keyB = d_SrcKey[pos +      0];
-            uint valB = d_SrcVal[pos +      0];
+            int keyA = values[pos - stride];
+            int keyB = values[pos +      0];
 
-            Comparator(
-                keyA, valA,
-                keyB, valB,
-                dir
-            );
-
-            d_DstKey[pos - stride] = keyA;
-            d_DstVal[pos - stride] = valA;
-            d_DstKey[pos +      0] = keyB;
-            d_DstVal[pos +      0] = valB;
+            if(keyA > keyB) {
+                values[pos - stride] = keyB;
+                values[pos +      0] = keyA;
+            }
         }
     }
     else
     {
-        uint keyA = d_SrcKey[pos +      0];
-        uint valA = d_SrcVal[pos +      0];
-        uint keyB = d_SrcKey[pos + stride];
-        uint valB = d_SrcVal[pos + stride];
+        int keyA = values[pos +      0];
+        int keyB = values[pos + stride];
 
-        Comparator(
-            keyA, valA,
-            keyB, valB,
-            dir
-        );
-
-        d_DstKey[pos +      0] = keyA;
-        d_DstVal[pos +      0] = valA;
-        d_DstKey[pos + stride] = keyB;
-        d_DstVal[pos + stride] = valB;
+        if(keyA > keyB) {
+            values[pos +      0] = keyB;
+            values[pos + stride] = keyA;
+        }
     }
 }
 
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Interface function
-////////////////////////////////////////////////////////////////////////////////
-//Helper function
-extern "C" uint factorRadix2(uint *log2L, uint L);
-
-extern "C" void oddEvenMergeSort(
-    uint *d_DstKey,
-    uint *d_DstVal,
-    uint *d_SrcKey,
-    uint *d_SrcVal,
-    uint batchSize,
-    uint arrayLength,
-    uint dir
-)
+__host__ void inline OddEvenMergeSort(int** d_mem_values,
+                                      const uint N)
 {
-    //Nothing to sort
-    if (arrayLength < 2)
-        return;
+    kdim v = get_kdim(N>>1);
 
-    //Only power-of-two array lengths are supported by this implementation
-    uint log2L;
-    uint factorizationRemainder = factorRadix2(&log2L, arrayLength);
-    assert(factorizationRemainder == 1);
-
-    dir = (dir != 0);
-
-    uint  blockCount = (batchSize * arrayLength) / SHARED_SIZE_LIMIT;
-    uint threadCount = SHARED_SIZE_LIMIT / 2;
-
-    if (arrayLength <= SHARED_SIZE_LIMIT)
+    if (v.num_blocks == 1)
     {
-        assert(SHARED_SIZE_LIMIT % arrayLength == 0);
-        oddEvenMergeSortShared<<<blockCount, threadCount>>>(d_DstKey, d_DstVal, d_SrcKey, d_SrcVal, arrayLength, dir);
+        CUDA_OddEvenMergeSortShared<<<v.dim_blocks, v.num_threads, N*sizeof(int)>>>(*d_mem_values, N);
+        cudaDeviceSynchronize();
     }
-    else
-    {
-        oddEvenMergeSortShared<<<blockCount, threadCount>>>(d_DstKey, d_DstVal, d_SrcKey, d_SrcVal, SHARED_SIZE_LIMIT, dir);
+    else {
+        CUDA_OddEvenMergeSortShared<<<v.dim_blocks, v.num_threads, v.num_threads*2*sizeof(int)>>>(*d_mem_values, v.num_threads*2);
+        cudaDeviceSynchronize();
 
-        for (uint size = 2 * SHARED_SIZE_LIMIT; size <= arrayLength; size <<= 1)
-            for (unsigned stride = size / 2; stride > 0; stride >>= 1)
+        for (uint size = 2 * v.num_threads; size <= N; size <<= 1)
+        {
+            for (uint stride = size / 2; stride > 0; stride >>= 1)
             {
-                //Unlike with bitonic sort, combining bitonic merge steps with
-                //stride = [SHARED_SIZE_LIMIT / 2 .. 1] seems to be impossible as there are
-                //dependencies between data elements crossing the SHARED_SIZE_LIMIT borders
-                oddEvenMergeGlobal<<<(batchSize * arrayLength) / 512, 256>>>(d_DstKey, d_DstVal, d_DstKey, d_DstVal, arrayLength, size, stride, dir);
+                CUDA_OddEvenMergeSortGlobal<<<v.dim_blocks, v.num_threads>>>(*d_mem_values, size, stride);
+                cudaDeviceSynchronize();
             }
+        }
     }
+}
+
+// program main
+int main(int argc, char** argv)
+{
+    void *h_mem, *d_mem_values; //, *d_mem_sorted;
+    size_t min_size = 1024UL; //1kB
+    size_t max_size = 1024UL*1024UL*256UL; //256MB
+
+    h_mem = malloc(max_size);
+    assert(h_mem != NULL);
+    gpuErrchk( cudaMalloc(&d_mem_values, max_size) );
+
+    srand(time(NULL));
+
+    for(size_t size = min_size; size <= max_size; size <<= 1) {
+        size_t N = size/sizeof(int);
+        init_values_int((int*) h_mem, N);
+
+        copy_to_device_time(d_mem_values, h_mem, size);
+        cudaDeviceSynchronize();
+
+        OddEvenMergeSort((int**) &d_mem_values, N);
+        cudaDeviceSynchronize();
+        gpuErrchk( cudaPeekAtLastError() );
+
+        copy_to_host_time(h_mem, d_mem_values, size);
+        cudaDeviceSynchronize();
+
+        printf("after %ld %s\n", N, is_int_array_sorted((int*) h_mem, N, false) ? "true":"false");
+    }
+
+    cudaFree(d_mem_values);
+    free(h_mem);
+
+    return 0;
 }
