@@ -12,38 +12,61 @@
 
 
 __global__ static void CUDA_MergeSortShared(int* __restrict__ values,
-                                            int* __restrict__ values_sorted,
                                             const uint dstMergeSize)
 {
     extern __shared__ int shared_values[];
+    const uint idx = TDIM * BID + TID;
     const uint srcMergeSize = dstMergeSize>>1;
     int* shared_a = shared_values;
     int* shared_b = shared_values+srcMergeSize;
+    int* shared_out = shared_values+dstMergeSize;
 
-    values_sorted += TDIM * BID;
-
-    shared_values[TID] = values[TDIM * BID + TID];
+    shared_values[TID] = values[idx];
     __syncthreads();
 
     if (TID == 0) {
         uint i = 0;
         uint a = 0;
         uint b = 0;
+        int v_a = shared_a[a];
+        int v_b = shared_b[b];
 
-        while (i < dstMergeSize) {
-            if (b >= srcMergeSize || (a < srcMergeSize && shared_a[a] < shared_b[b]))
-                values_sorted[i++] = shared_a[a++];
-            else
-                values_sorted[i++] = shared_b[b++];
+        while (i < srcMergeSize) {
+            if (b >= srcMergeSize || (a < srcMergeSize && v_a < v_b)) {
+                shared_out[i++] = v_a;
+                v_a = shared_a[++a];
+            } else {
+                shared_out[i++] = v_b;
+                v_b = shared_b[++b];
+            }
+        }
+    } else if (TID == TDIM-1) {
+        uint i = dstMergeSize-1;
+        uint a = srcMergeSize-1;
+        uint b = srcMergeSize-1;
+        int v_a = shared_a[a];
+        int v_b = shared_b[b];
+
+        while (i >= srcMergeSize) {
+            if (b > srcMergeSize || (a < srcMergeSize && v_a >= v_b)) {
+                shared_out[i--] = v_a;
+                v_a = a > 0 ? shared_a[--a] : 0;
+            } else {
+                shared_out[i--] = v_b;
+                v_b = b > 0 ? shared_b[--b] : 0;
+            }
         }
     }
+
+    __syncthreads();
+    values[idx] = shared_out[TID];
 }
 
 __global__ static void CUDA_MergeSortGlobal(int* __restrict__ values,
                                             int* __restrict__ values_sorted,
                                             const uint dstMergeSize)
 {
-    const uint srcMergeSize = dstMergeSize>>1;
+    /*const uint srcMergeSize = dstMergeSize>>1;
     int *values_a = values + (dstMergeSize * BID);
     int *values_b = values + (dstMergeSize * BID) + srcMergeSize;
     values_sorted += dstMergeSize * BID;
@@ -123,7 +146,7 @@ __global__ static void CUDA_MergeSortGlobal(int* __restrict__ values,
                 merged = true;
         }
         __syncthreads();
-    }
+    }*/
 }
 
 __host__ void inline MergeSort(int** d_mem_values,
@@ -134,14 +157,13 @@ __host__ void inline MergeSort(int** d_mem_values,
 
         if (i <= MAX_THREADS) {
             kdim v = get_kdim_nt(N, i);
-            CUDA_MergeSortShared<<<v.dim_blocks, v.num_threads, v.num_threads*sizeof(int)>>>(*d_mem_values, *d_mem_sorted, i);
+            CUDA_MergeSortShared<<<v.dim_blocks, v.num_threads, v.num_threads*sizeof(int) << 1>>>(*d_mem_values, i);
         }
         else {
             kdim v = get_kdim_b(N/i);
-            CUDA_MergeSortGlobal<<<v.dim_blocks, v.num_threads>>>(*d_mem_values, *d_mem_sorted, i);
+            //CUDA_MergeSortGlobal<<<v.dim_blocks, v.num_threads>>>(*d_mem_values, *d_mem_sorted, i);
+            swap((void**)d_mem_values, (void**)d_mem_sorted);
         }
-
-        swap((void**)d_mem_values, (void**)d_mem_sorted);
 
         cudaDeviceSynchronize();
         gpuErrchk( cudaPeekAtLastError() );
