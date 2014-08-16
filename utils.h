@@ -3,17 +3,44 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
 #include <assert.h>
 
-typedef unsigned int uint;
-typedef unsigned short ushort;
+typedef struct Element_key32 {
+    int32_t k;
+} Element_key32;
 
-struct counted_value {
-    int v;
-    int c;
-};
+typedef struct Element_key64 {
+    int64_t k;
+} Element_key64;
+
+typedef struct Element_pair32 {
+    int32_t k;
+    int32_t v;
+} Element_pair32;
+
+typedef struct Element_pair64 {
+    int64_t k;
+    int64_t v;
+} Element_pair64;
+
+typedef struct Element_pair64p {
+    int64_t k;
+    int64_t v1;
+    int64_t v2;
+    int64_t v3;
+} Element_pair64p;
+
+typedef Element_key32 Element;
+typedef int32_t Key;
+
+//typedef Element_pair64p Element;
+//typedef int64_t Key;
+
+#define MIN_SIZE 1024UL //1kB
+#define MAX_SIZE 1024UL*1024UL*256UL //256MB
 
 void swap(void **lhs, void **rhs)
 {
@@ -22,107 +49,34 @@ void swap(void **lhs, void **rhs)
     *rhs = tmp;
 }
 
-void init_values_int(int *values, size_t length)
+void init_values(Element *values, int32_t length)
 {
-    for (size_t i = 0; i < length; ++i) {
-        values[i] = rand();
+    for (int32_t i = 0; i < length; ++i) {
+        values[i].k = rand();
     }
 }
 
-void init_values_int_sorted(int *values, size_t length, bool reverse)
+void init_values_sorted(Element *values, int32_t length, bool reverse)
 {
-    for (size_t i = 0; i < length; ++i) {
-        values[i] = !reverse ? i : length-i-1;
+    for (int32_t i = 0; i < length; ++i) {
+        values[i].k = !reverse ? i : length-i-1;
     }
 }
 
-void init_values_long(long *values, size_t length)
+bool is_int_array_sorted(Element *values, int32_t length, bool reverse)
 {
-    for (size_t i = 0; i < length; ++i) {
-        values[i] = (long)rand() * (long)rand();
-    }
-}
-
-void init_values_long_sorted(long *values, size_t length, bool reverse)
-{
-    for (size_t i = 0; i < length; ++i) {
-        values[i] = !reverse ? i : length-i-1;
-    }
-}
-
-void init_values_counted(struct counted_value *values, int length, int max_value)
-{
-    int counter = 0;
-
-    for (int i = 0; i < length; ++i) {
-        values[i].v = rand() % (max_value+1);
-        values[i].c = counter++;
-    }
-}
-
-/*void init_values_custom(void* values, int length, int item_size, int max_value) {
-    for (int i = 0; i < length; ++i)
-    {
-        int *ptr = (int*)(values+(item_size*i));
-        *ptr = rand() % (max_value+1);
-    }
-}*/
-
-bool is_int_array_sorted(int *values, size_t length, bool reverse)
-{
-    for (size_t i = 0; i+1 < length-1; ++i) {
-        if (!reverse ? (values[i] > values[i+1]) : (values[i] < values[i+1])) {
+    for (int32_t i = 0; i+1 < length-1; ++i) {
+        if (!reverse ? (values[i].k > values[i+1].k) : (values[i].k < values[i+1].k)) {
             return false;
         }
     }
     return true;
 }
 
-bool is_long_array_sorted(long *values, size_t length, bool reverse)
+void print_int_array(const Element *a, int32_t size)
 {
-    bool sorted = true;
-    for (size_t i = 0; i < length-1; ++i) {
-        sorted = sorted && (!reverse ? (values[i] <= values[i+1]) : (values[i] >= values[i+1]));
-    }
-    return sorted;
-}
-
-bool is_counted_array_sorted(struct counted_value *values, int length, bool reverse)
-{
-    bool sorted = true;
-    for (int i = 0; i < length-1; ++i) {
-        sorted = sorted && (!reverse ? (values[i].v <= values[i+1].v) : (values[i].v >= values[i+1].v));
-    }
-    return sorted;
-}
-
-bool is_counted_array_sorted_stable(struct counted_value *values, int length, bool reverse)
-{
-    bool stable = true;
-    for (int i = 0; i < length-1; ++i) {
-        if(values[i].v == values[i+1].v) {
-            stable = stable && (!reverse ? (values[i].c <= values[i+1].c) : (values[i].c >= values[i+1].c));
-        }
-    }
-    return stable;
-}
-
-/*bool is_custom_array_sorted(void* values, int length, int item_size, bool reverse) {
-    bool sorted = true;
-    for (int i = 0; i < length-1; ++i)
-    {
-        int *ptr_l = (int*)(values+(item_size*i));
-        int *ptr_r = (int*)(values+(item_size*(i+1)));
-
-        sorted = sorted && (!reverse ? (ptr_l <= ptr_r) : (ptr_l >= ptr_r));
-    }
-    return sorted;
-}*/
-
-void print_int_array(const int *a, size_t size)
-{
-    for (size_t i = 0; i < size; ++i) {
-        printf("%d\n", a[i]);
+    for (int32_t i = 0; i < size; ++i) {
+        printf("%d\n", a[i].k);
     }
 }
 

@@ -1,5 +1,5 @@
 /*
- * bitonic_sort.cu
+ * radixSort.cu
  *
  */
 
@@ -11,73 +11,73 @@
 #include "cuda_utils.h"
 
 
-__global__ static void CUDA_RadixPrefixSum(int* __restrict__ values,
-        uint* __restrict__ values_masks,
-        uint* __restrict__ aux,
-        const int mask)
+__global__ static void CUDA_RadixPrefixSum(Element* __restrict__ values,
+                                           int32_t* __restrict__ values_masks,
+                                           int32_t* __restrict__ aux,
+                                           const Key mask)
 {
-    const uint idx = (TDIM * BID + TID) << 1;
-    const uint tmp_in0 = (values[idx] & mask) ? 0 : 1;
-    const uint tmp_in1 = (values[idx + 1] & mask) ? 0 : 1;
+    const int32_t idx = (TDIM * BID + TID) << 1;
+    const int32_t tmp_in0 = (values[idx].k & mask) ? 0 : 1;
+    const int32_t tmp_in1 = (values[idx + 1].k & mask) ? 0 : 1;
 
-    extern __shared__ uint shared[];
+    extern __shared__ int32_t shared_int32[];
 
-    shared[TID] = tmp_in0 + tmp_in1;
+    shared_int32[TID] = tmp_in0 + tmp_in1;
     __syncthreads();
 
-    for (uint i = 1; i < TDIM; i <<= 1) {
-        const uint x = (i<<1)-1;
+    for (int32_t i = 1; i < TDIM; i <<= 1) {
+        const int32_t x = (i<<1)-1;
         if (TID >= i && (TID & x) == x) {
-            shared[TID] += shared[TID - i];
+            shared_int32[TID] += shared_int32[TID - i];
         }
         __syncthreads();
     }
 
     if (TID == 0)
-        shared[TDIM - 1] = 0;
+        shared_int32[TDIM - 1] = 0;
     __syncthreads();
 
-    for (uint i = TDIM>>1; i >= 1; i >>= 1) {
-        uint x = (i<<1)-1;
+    for (int32_t i = TDIM>>1; i >= 1; i >>= 1) {
+        int32_t x = (i<<1)-1;
         if (TID >= i && (TID & x) == x) {
-            uint swp_tmp = shared[TID - i];
-            shared[TID - i] = shared[TID];
-            shared[TID] += swp_tmp;
+            int32_t temp = shared_int32[TID - i];
+            shared_int32[TID - i] = shared_int32[TID];
+            shared_int32[TID] += temp;
         }
         __syncthreads();
     }
 
-    values_masks[idx] = shared[TID];
-    values_masks[idx + 1] = shared[TID] + tmp_in0;
+    values_masks[idx] = shared_int32[TID];
+    values_masks[idx + 1] = shared_int32[TID] + tmp_in0;
 
     if (TID == TDIM-1)
-        aux[BID] = tmp_in0 + shared[TID] + tmp_in1;
+        aux[BID] = tmp_in0 + shared_int32[TID] + tmp_in1;
 }
 
-__global__ static void CUDA_RadixSort(int* __restrict__ values,
-                                      int* __restrict__ values_sorted,
-                                      uint* __restrict__ values_masks_psum,
-                                      const int mask)
+__global__ static void CUDA_RadixSort(Element* __restrict__ values,
+                                      Element* __restrict__ values_sorted,
+                                      int32_t* __restrict__ values_masks_psum,
+                                      const Key mask)
 {
-    const uint idx = TDIM * BID + TID;
-    const uint bdim = TDIM * BDIM;
-    const uint current = values[idx];
-    const uint new_idx = values_masks_psum[idx];
+    const int32_t idx = TDIM * BID + TID;
+    const int32_t bdim = TDIM * BDIM;
+    const Element current = values[idx];
+    const int32_t new_idx = values_masks_psum[idx];
 
-    if (current & mask)
-        values_sorted[idx + (values_masks_psum[bdim-1] + ((values[bdim-1] & mask) ? 0 : 1)) - new_idx] = current;
+    if (current.k & mask)
+        values_sorted[idx + (values_masks_psum[bdim-1] + ((values[bdim-1].k & mask) ? 0 : 1)) - new_idx] = current;
     else
         values_sorted[new_idx] = current;
 }
 
-__host__ void RadixPrefixSum(int* d_mem_values, uint* d_mem_masks,
-                             const uint N, const int mask)
+__host__ void RadixPrefixSum(Element* d_mem_values, int32_t* d_mem_masks,
+                             const int32_t N, const Key mask)
 {
-    uint *d_mem_aux;
+    int32_t *d_mem_aux;
     kdim v = get_kdim(N);
 
-    gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(uint)) );
-    CUDA_RadixPrefixSum<<<v.dim_blocks, v.num_threads>>1, v.num_threads*sizeof(uint)>>>(d_mem_values, d_mem_masks, d_mem_aux, mask);
+    gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(int32_t)) );
+    CUDA_RadixPrefixSum<<<v.dim_blocks, v.num_threads>>1, v.num_threads*sizeof(int32_t)>>>(d_mem_values, d_mem_masks, d_mem_aux, mask);
     cudaDeviceSynchronize();
     gpuErrchk( cudaPeekAtLastError() );
 
@@ -91,18 +91,18 @@ __host__ void RadixPrefixSum(int* d_mem_values, uint* d_mem_masks,
     cudaFree(d_mem_aux);
 }
 
-__host__ void inline RadixSort(int* d_mem_values,
-                               int* d_mem_sorted,
-                               const uint N)
+__host__ void inline RadixSort(Element* d_mem_values,
+                               Element* d_mem_sorted,
+                               const int32_t N)
 {
-    int *d_v, *d_s;
-    uint *d_m;
+    Element *d_v, *d_s;
+    int32_t *d_m;
     kdim v = get_kdim(N);
 
-    gpuErrchk( cudaMalloc(&d_m, N * sizeof(uint)) );
+    gpuErrchk( cudaMalloc(&d_m, N * sizeof(int32_t)) );
 
-    for (short bit = 0; bit < sizeof(int)*8; ++bit) {
-        int mask = 1 << bit;
+    for (int16_t bit = 0; bit < sizeof(Key)*8; ++bit) {
+        Key mask = 1 << bit;
 
         if (bit % 2) {
             d_v = d_mem_values;
@@ -126,31 +126,29 @@ __host__ void inline RadixSort(int* d_mem_values,
 int main(int argc, char** argv)
 {
     void *h_mem, *d_mem_values, *d_mem_sorted;
-    size_t min_size = 1024UL; //1kB
-    size_t max_size = 1024UL*1024UL*256UL; //256MB
 
-    h_mem = malloc(max_size);
+    h_mem = malloc(MAX_SIZE);
     assert(h_mem != NULL);
-    gpuErrchk( cudaMalloc(&d_mem_values, max_size) );
-    gpuErrchk( cudaMalloc(&d_mem_sorted, max_size) );
+    gpuErrchk( cudaMalloc(&d_mem_values, MAX_SIZE) );
+    gpuErrchk( cudaMalloc(&d_mem_sorted, MAX_SIZE) );
 
     srand(time(NULL));
 
-    for(size_t size = min_size; size <= max_size; size <<= 1) {
-        size_t N = size/sizeof(int);
-        init_values_int((int*) h_mem, N);
+    for(int32_t size = MIN_SIZE; size <= MAX_SIZE; size <<= 1) {
+        int32_t N = size/sizeof(Element);
+        init_values((Element*) h_mem, N);
 
         copy_to_device_time(d_mem_values, h_mem, size);
         cudaDeviceSynchronize();
 
-        RadixSort((int*) d_mem_values, (int*) d_mem_sorted, N);
+        RadixSort((Element*) d_mem_values, (Element*) d_mem_sorted, N);
         cudaDeviceSynchronize();
         gpuErrchk( cudaPeekAtLastError() );
 
         copy_to_host_time(h_mem, d_mem_sorted, size);
         cudaDeviceSynchronize();
 
-        printf("after %ld %s\n", N, is_int_array_sorted((int*) h_mem, N, false) ? "true":"false");
+        printf("after %ld %s\n", N, is_int_array_sorted((Element*) h_mem, N, false) ? "true":"false");
     }
 
     cudaFree(d_mem_values);

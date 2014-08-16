@@ -22,8 +22,8 @@ inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
 }
 
 typedef struct kdim {
-    uint num_threads;
-    uint num_blocks;
+    size_t num_threads;
+    size_t num_blocks;
     dim3 dim_blocks;
 } kdim;
 
@@ -98,105 +98,105 @@ __host__ clock_t copy_to_host_time(void *dst, const void *src, size_t size)
     return t2 - t1;
 }
 
-__global__ void CUDA_SumScan_Inclusive(uint* __restrict__ values,
-                                       uint* __restrict__ aux)
+__global__ void CUDA_SumScan_Inclusive(int32_t* __restrict__ values,
+                                       int32_t* __restrict__ aux)
 {
-    const uint idx = (TDIM * BID + TID) << 1;
-    const uint tmp_in0 = values[idx];
-    const uint tmp_in1 = values[idx + 1];
+    const int32_t idx = (TDIM * BID + TID) << 1;
+    const int32_t tmp_in0 = values[idx];
+    const int32_t tmp_in1 = values[idx + 1];
 
-    extern __shared__ uint shared[];
+    extern __shared__ int32_t shared_int32[];
 
-    shared[TID] = tmp_in0 + tmp_in1;
+    shared_int32[TID] = tmp_in0 + tmp_in1;
     __syncthreads();
 
-    for (uint i = 1; i < TDIM; i <<= 1) {
-        const uint x = (i<<1)-1;
+    for (int32_t i = 1; i < TDIM; i <<= 1) {
+        const int32_t x = (i<<1)-1;
         if (TID >= i && (TID & x) == x) {
-            shared[TID] += shared[TID - i];
+            shared_int32[TID] += shared_int32[TID - i];
         }
         __syncthreads();
     }
 
     if (TID == 0)
-        shared[TDIM - 1] = 0;
+        shared_int32[TDIM - 1] = 0;
     __syncthreads();
 
-    for (uint i = TDIM>>1; i >= 1; i >>= 1) {
-        uint x = (i<<1)-1;
+    for (int32_t i = TDIM>>1; i >= 1; i >>= 1) {
+        int32_t x = (i<<1)-1;
         if (TID >= i && (TID & x) == x) {
-            uint swp_tmp = shared[TID - i];
-            shared[TID - i] = shared[TID];
-            shared[TID] += swp_tmp;
+            int32_t temp = shared_int32[TID - i];
+            shared_int32[TID - i] = shared_int32[TID];
+            shared_int32[TID] += temp;
         }
         __syncthreads();
     }
 
-    values[idx] = shared[TID] + tmp_in0;
-    values[idx + 1] = shared[TID] + tmp_in0 + tmp_in1;
+    values[idx] = shared_int32[TID] + tmp_in0;
+    values[idx + 1] = shared_int32[TID] + tmp_in0 + tmp_in1;
 
     if (TID == TDIM-1 && aux)
-        aux[BID] = tmp_in0 + shared[TID] + tmp_in1;
+        aux[BID] = tmp_in0 + shared_int32[TID] + tmp_in1;
 }
 
-__global__ void CUDA_SumScan_Exclusive(uint* __restrict__ values,
-                                       uint* __restrict__ aux)
+__global__ void CUDA_SumScan_Exclusive(int32_t* __restrict__ values,
+                                       int32_t* __restrict__ aux)
 {
-    const uint idx = (TDIM * BID + TID) << 1;
-    const uint tmp_in0 = values[idx];
-    const uint tmp_in1 = values[idx + 1];
+    const int32_t idx = (TDIM * BID + TID) << 1;
+    const int32_t tmp_in0 = values[idx];
+    const int32_t tmp_in1 = values[idx + 1];
 
-    extern __shared__ uint shared[];
+    extern __shared__ int32_t shared_int32[];
 
-    shared[TID] = tmp_in0 + tmp_in1;
+    shared_int32[TID] = tmp_in0 + tmp_in1;
     __syncthreads();
 
-    for (uint i = 1; i < TDIM; i <<= 1) {
-        const uint x = (i<<1)-1;
+    for (int32_t i = 1; i < TDIM; i <<= 1) {
+        const int32_t x = (i<<1)-1;
         if (TID >= i && (TID & x) == x) {
-            shared[TID] += shared[TID - i];
+            shared_int32[TID] += shared_int32[TID - i];
         }
         __syncthreads();
     }
 
     if (TID == 0)
-        shared[TDIM - 1] = 0;
+        shared_int32[TDIM - 1] = 0;
     __syncthreads();
 
-    for (uint i = TDIM>>1; i >= 1; i >>= 1) {
-        uint x = (i<<1)-1;
+    for (int32_t i = TDIM>>1; i >= 1; i >>= 1) {
+        int32_t x = (i<<1)-1;
         if (TID >= i && (TID & x) == x) {
-            uint swp_tmp = shared[TID - i];
-            shared[TID - i] = shared[TID];
-            shared[TID] += swp_tmp;
+            int32_t temp = shared_int32[TID - i];
+            shared_int32[TID - i] = shared_int32[TID];
+            shared_int32[TID] += temp;
         }
         __syncthreads();
     }
 
-    values[idx] = shared[TID];
-    values[idx + 1] = shared[TID] + tmp_in0;
+    values[idx] = shared_int32[TID];
+    values[idx + 1] = shared_int32[TID] + tmp_in0;
 
     if (TID == TDIM-1 && aux)
-        aux[BID] = tmp_in0 + shared[TID] + tmp_in1;
+        aux[BID] = tmp_in0 + shared_int32[TID] + tmp_in1;
 }
 
-__global__ void CUDA_SumScanUpdate(uint* __restrict__ values,
-                                   uint* __restrict__ aux)
+__global__ void CUDA_SumScanUpdate(int32_t* __restrict__ values,
+                                   int32_t* __restrict__ aux)
 {
-    const uint bid = BID;
+    const int32_t bid = BID;
 
     if (bid > 0)
         values[TDIM * bid + TID] += aux[bid - 1];
 }
 
-__host__ void SumScan_Inclusive(uint* d_mem_values, const uint N)
+__host__ void SumScan_Inclusive(int32_t* d_mem_values, const int32_t N)
 {
-    uint *d_mem_aux;
+    int32_t *d_mem_aux;
     kdim v = get_kdim(N);
 
     if (v.num_blocks > 1) {
-        gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(uint)) );
-        CUDA_SumScan_Inclusive<<<v.dim_blocks, v.num_threads>>1, v.num_threads*sizeof(uint)>>>(d_mem_values, d_mem_aux);
+        gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(int32_t)) );
+        CUDA_SumScan_Inclusive<<<v.dim_blocks, v.num_threads>>1, v.num_threads*sizeof(int32_t)>>>(d_mem_values, d_mem_aux);
         cudaDeviceSynchronize();
         gpuErrchk( cudaPeekAtLastError() );
 
@@ -207,17 +207,17 @@ __host__ void SumScan_Inclusive(uint* d_mem_values, const uint N)
 
         cudaFree(d_mem_aux);
     } else {
-        CUDA_SumScan_Inclusive<<<v.dim_blocks, v.num_threads>>1, v.num_threads*sizeof(uint)>>>(d_mem_values, 0);
+        CUDA_SumScan_Inclusive<<<v.dim_blocks, v.num_threads>>1, v.num_threads*sizeof(int32_t)>>>(d_mem_values, 0);
     }
 }
 
-__host__ void SumScan_Exclusive(uint* d_mem_values, const uint N)
+__host__ void SumScan_Exclusive(int32_t* d_mem_values, const int32_t N)
 {
-    uint *d_mem_aux;
+    int32_t *d_mem_aux;
     kdim v = get_kdim(N);
 
     if (v.num_blocks > 1) {
-        gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(uint)) );
+        gpuErrchk( cudaMalloc(&d_mem_aux, v.num_blocks * sizeof(int32_t)) );
         CUDA_SumScan_Exclusive<<<v.dim_blocks, v.num_threads/2>>>(d_mem_values, d_mem_aux);
         cudaDeviceSynchronize();
         gpuErrchk( cudaPeekAtLastError() );

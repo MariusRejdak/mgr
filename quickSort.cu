@@ -1,5 +1,5 @@
 /*
- * bitonic_sort.cu
+ * quickSort.cu
  *
  */
 
@@ -15,24 +15,21 @@
 int main(int argc, char** argv)
 {
     void *h_mem;
-    size_t min_size = 1024UL; //1kB
-    size_t max_size = 1024UL*1024UL*256UL; //256MB
 
-    h_mem = malloc(max_size);
+    h_mem = malloc(MAX_SIZE);
     assert(h_mem != NULL);
 
     srand(time(NULL));
 
-    for(size_t size = min_size; size <= max_size; size <<= 1) {
-        size_t N = size/sizeof(int);
-        init_values_int((int*) h_mem, N);
+    for(int32_t size = MIN_SIZE; size <= MAX_SIZE; size <<= 1) {
+        int32_t N = size/sizeof(Element);
+        init_values((Element*) h_mem, N);
 
-        gpuqsort((uint*) h_mem, N);
+        //gpuqsort((Element*) h_mem, N);
         cudaDeviceSynchronize();
         gpuErrchk( cudaPeekAtLastError() );
 
-        printf("after %ld %s\n", N, is_int_array_sorted((int*) h_mem, N, false) ? "true":"false");
-        print_int_array((int*) h_mem, N);
+        printf("after %ld %s\n", N, is_int_array_sorted((Element*) h_mem, N, false) ? "true":"false");
     }
 
     free(h_mem);

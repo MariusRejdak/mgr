@@ -1,5 +1,5 @@
 /*
- * thrust_radix_sort.cu
+ * thrustSort.cu
  *
  */
 
@@ -11,43 +11,53 @@
 
 #include <thrust/uninitialized_copy.h>
 #include <thrust/device_malloc.h>
-#include <thrust/sort.h>
+#include <thrust/system/cuda/detail/detail/stable_radix_sort.h>
+#include <thrust/execution_policy.h>
 
-int my_compare (const void * a, const void * b)
+/*int my_compare (const void *a, const void *b)
 {
-    int _a = *(int*)a;
-    int _b = *(int*)b;
+    Key _a = ((Element*)a)->k;
+    Key _b = ((Element*)b)->k;
     if(_a < _b) return -1;
     else if(_a == _b) return 0;
     else return 1;
-}
+}*/
+
+template<typename T>
+struct my_less {
+    __host__ __device__
+    bool operator()(const T &x, const T &y) const {
+        return x < y;
+    }
+};
 
 // program main
 int main(int argc, char** argv)
 {
-    int *h_mem;
-    size_t min_size = 1024UL; //1kB
-    size_t max_size = 1024UL*1024UL*256UL; //256MB
+    void *h_mem;
 
-    h_mem = (int*)malloc(max_size);
+    h_mem = malloc(MAX_SIZE);
     assert(h_mem != NULL);
-    thrust::device_ptr<int> d_mem = thrust::device_malloc<int>(max_size/sizeof(int));
+    thrust::device_ptr<Key> d_mem = thrust::device_malloc<Key>(MAX_SIZE/sizeof(Key));
 
     srand(time(NULL));
 
-    for(size_t size = min_size; size <= max_size; size <<= 1) {
-        size_t N = size/sizeof(int);
-        init_values_int((int*) h_mem, N);
+    for(int32_t size = MIN_SIZE; size <= MAX_SIZE; size <<= 1) {
+        int32_t N = size/sizeof(Element);
+        init_values((Element*) h_mem, N);
 
-        //thrust::uninitialized_copy(h_mem, h_mem+N, d_mem);
+        thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem);
 
-        //thrust::sort(d_mem, d_mem+N);
+        //Radix sort
         //thrust::stable_sort(d_mem, d_mem+N);
 
-        //thrust::copy(d_mem, d_mem+N, h_mem);
-        qsort(h_mem, N, sizeof(int), my_compare);
+        //Merge sort
+        thrust::stable_sort(d_mem, d_mem+N, my_less<Key>());
 
-        printf("after %ld %s\n", N, is_int_array_sorted((int*) h_mem, N, false) ? "true":"false");
+        thrust::copy(d_mem, d_mem+N, (Key*)h_mem);
+        //qsort(h_mem, N, sizeof(Element), my_compare);
+
+        printf("after %ld %s\n", N, is_int_array_sorted((Element*) h_mem, N, false) ? "true":"false");
     }
 
     free(h_mem);
