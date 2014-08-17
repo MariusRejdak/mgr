@@ -10,6 +10,8 @@
 #include "utils.h"
 #include "cuda_utils.h"
 
+#define MERGE_SIZE 32
+
 __global__ static void CUDA_MergeSortSmall(Element* __restrict__ values,
                                            const int32_t iteration)
 {
@@ -73,35 +75,33 @@ __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
     shared_b[TID] = values[idx + (1 << iteration)];
     __syncthreads();
 
-    int32_t a = TID & ~(32 - 1);
-    int32_t a_end = a + 32;
-    int32_t b = a;
-    int32_t b_end = a_end;
+    if ((TID & MERGE_SIZE - 1) == 0) {
+        int32_t a = TID & ~(MERGE_SIZE - 1);
+        int32_t a_end = a + MERGE_SIZE;
+        int32_t b = a;
+        int32_t b_end = a_end;
 
-    if (a > 0) {
-        const Key a_min = shared_a[a].k;
-        while (b > 0 && a_min <= shared_b[b].k) b -= 32;
-        while (b < TDIM-1 && a_min > shared_b[b].k) ++b;
-    }
-    if (a_end < TDIM) {
-        const Key a_next_min = shared_a[a_end].k;
-        while (b_end < TDIM && a_next_min > shared_b[b_end-1].k) b_end += 32;
-        while (b_end > 0 && a_next_min <= shared_b[b_end-1].k) --b_end;
-    }
+        if (a > 0) {
+            const Key a_min = shared_a[a].k;
+            while (b > 0 && a_min <= shared_b[b].k) b -= MERGE_SIZE;
+            while (b < TDIM-1 && a_min > shared_b[b].k) ++b;
+        }
+        if (a_end < TDIM) {
+            const Key a_next_min = shared_a[a_end].k;
+            while (b_end < TDIM && a_next_min > shared_b[b_end-1].k) b_end += MERGE_SIZE;
+            while (b_end > 0 && a_next_min <= shared_b[b_end-1].k) --b_end;
+        }
 
-    __syncthreads();
-
-    if ((TID & 32 - 1) == 0) {
         Element v_a = shared_a[a];
         Element v_b = shared_b[b];
 
         while (a < a_end || b < b_end) {
             if (b >= b_end || (a < a_end && v_a.k < v_b.k)) {
                 shared_out[a + b] = v_a;
-                v_a = shared_a[++a];
+                if (++a < a_end) v_a = shared_a[a];
             } else {
                 shared_out[a + b] = v_b;
-                v_b = shared_b[++b];
+                if (++b < b_end) v_b = shared_b[b];
             }
         }
     }
@@ -116,10 +116,45 @@ __global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
                                             const int32_t iteration,
                                             const int32_t N)
 {
-    /*extern __shared__ Element shared_values[];
-    const int32_t idx = TDIM * BID + TID;
+    //extern __shared__ Element shared_values[];
+    const int32_t srcMergeSize = 1 << iteration;
+    int32_t idx = TDIM * BID + TID;
 
-    values += idx*/
+    Element* shared_a = values + 2*(idx & ~(srcMergeSize - 1));
+    Element* shared_b = shared_a + srcMergeSize;
+    Element* shared_out = values_sorted + 2*(idx & ~(srcMergeSize - 1));
+    idx &= srcMergeSize - 1;
+
+    int32_t a = idx & ~(MERGE_SIZE - 1);
+    int32_t a_end = a + MERGE_SIZE;
+    int32_t b = a;
+    int32_t b_end = a_end;
+
+    if ((idx & MERGE_SIZE - 1) == 0) {
+        if (a > 0) {
+            const Key a_min = shared_a[a].k;
+            while (b > 0 && a_min <= shared_b[b].k) b -= MERGE_SIZE;
+            while (b < srcMergeSize-1 && a_min > shared_b[b].k) ++b;
+        }
+        if (a_end < srcMergeSize) {
+            const Key a_next_min = shared_a[a_end].k;
+            while (b_end < srcMergeSize && a_next_min > shared_b[b_end-1].k) b_end += MERGE_SIZE;
+            while (b_end > 0 && a_next_min <= shared_b[b_end-1].k) --b_end;
+        }
+
+        Element v_a = shared_a[a];
+        Element v_b = shared_b[b];
+
+        while (a < a_end || b < b_end) {
+            if (b >= b_end || (a < a_end && v_a.k < v_b.k)) {
+                shared_out[a + b] = v_a;
+                if (++a < a_end) v_a = shared_a[a];
+            } else {
+                shared_out[a + b] = v_b;
+                if (++b < b_end) v_b = shared_b[b];
+            }
+        }
+    }
 }
 
 __host__ void inline MergeSort(Element** d_mem_values,
@@ -127,8 +162,7 @@ __host__ void inline MergeSort(Element** d_mem_values,
                                const int32_t N)
 {
     for (int32_t i = 0; (1 << i) < N; ++i) {
-
-        if (i <= 6) {
+        if (i <= 5) {
             kdim v = get_kdim_nt(N, (2 << i));
             CUDA_MergeSortSmall<<<v.dim_blocks, v.num_threads, v.num_threads*sizeof(Element) << 1>>>(*d_mem_values, i);
         } else if ((1 << i) <= MAX_THREADS) {
@@ -136,9 +170,9 @@ __host__ void inline MergeSort(Element** d_mem_values,
             CUDA_MergeSortShared<<<v.dim_blocks, v.num_threads, v.num_threads*sizeof(Element) << 2>>>(*d_mem_values, i);
         }
         else {
-            /*kdim v = get_kdim_b(N/i);
+            kdim v = get_kdim(N/2);
             CUDA_MergeSortGlobal<<<v.dim_blocks, v.num_threads>>>(*d_mem_values, *d_mem_sorted, i, N);
-            swap((void**)d_mem_values, (void**)d_mem_sorted);*/
+            swap((void**)d_mem_values, (void**)d_mem_sorted);
         }
 
         cudaDeviceSynchronize();
