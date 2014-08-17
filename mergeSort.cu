@@ -66,7 +66,12 @@ __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
                                             const int32_t iteration)
 {
     extern __shared__ Element shared_values[];
-    const int32_t idx = TDIM * BID + TID;
+    int32_t idx = TDIM * BID + TID;
+
+    const int32_t srcMergeSize = 1 << iteration;
+    values += 2*(idx & ~(srcMergeSize - 1));
+    idx &= srcMergeSize - 1;
+
     Element* shared_a = shared_values;
     Element* shared_b = shared_values + (1 << iteration);
     Element* shared_out = shared_values + (2 << iteration);
