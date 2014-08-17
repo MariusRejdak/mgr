@@ -24,35 +24,33 @@ __global__ static void CUDA_MergeSortSmall(Element* __restrict__ values,
     __syncthreads();
 
     if (TID == 0) {
-        int32_t i = 0;
         int32_t a = 0;
         int32_t b = 0;
         Element v_a = shared_a[a];
         Element v_b = shared_b[b];
 
-        while (i < srcMergeSize) {
+        while (a + b < srcMergeSize) {
             if (b >= srcMergeSize || (a < srcMergeSize && v_a.k < v_b.k)) {
-                shared_out[i++] = v_a;
+                shared_out[a + b] = v_a;
                 v_a = shared_a[++a];
             } else {
-                shared_out[i++] = v_b;
+                shared_out[a + b] = v_b;
                 v_b = shared_b[++b];
             }
         }
     } else if (TID == TDIM-1) {
-        int32_t i = (srcMergeSize << 1) - 1;
         int32_t a = srcMergeSize - 1;
         int32_t b = srcMergeSize - 1;
         Element v_a = shared_a[a];
         Element v_b = shared_b[b];
 
-        while (i >= srcMergeSize) {
+        while (a + b + 1 >= srcMergeSize) {
             if (b < 0 || (a >= 0 && v_a.k >= v_b.k)) {
-                shared_out[i--] = v_a;
-                v_a = a > 0 ? shared_a[--a] : v_a;
+                shared_out[a + b + 1] = v_a;
+                v_a = --a > 0 ? shared_a[a] : v_a;
             } else {
-                shared_out[i--] = v_b;
-                v_b = b > 0 ? shared_b[--b] : v_b;
+                shared_out[a + b + 1] = v_b;
+                v_b = --b > 0 ? shared_b[b] : v_b;
             }
         }
     }
@@ -67,84 +65,62 @@ __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
 {
     extern __shared__ Element shared_values[];
     const int32_t idx = TDIM * BID + TID;
-    const int32_t srcMergeSize = 1 << iteration;
     Element* shared_a = shared_values;
-    Element* shared_b = shared_values + srcMergeSize;
-    Element* shared_out = shared_values + (srcMergeSize << 1);
+    Element* shared_b = shared_values + (1 << iteration);
+    Element* shared_out = shared_values + (2 << iteration);
 
     shared_a[TID] = values[idx];
-    shared_b[TID] = values[idx+srcMergeSize];
+    shared_b[TID] = values[idx + (1 << iteration)];
     __syncthreads();
 
-    const int32_t lItemId = TID % 32;
-
-    int32_t a = TID - lItemId;
+    int32_t a = TID & ~(32 - 1);
     int32_t a_end = a + 32;
     int32_t b = a;
     int32_t b_end = a_end;
 
-    {
+    if (a > 0) {
         const Key a_min = shared_a[a].k;
-        const Key a_max = shared_a[a_end-1].k;
         while (b > 0 && a_min <= shared_b[b].k) b -= 32;
-        while (b_end < TDIM && a_max >= shared_b[b_end-1].k) b_end += 32;
-        if (a > 0) {
-            while (b < TDIM-1 && a_min > shared_b[b].k) ++b;
-        }
-        if (a_end < TDIM) {
-            const Key a_next_min = shared_a[a_end].k;
-            while (b_end > 0 && a_next_min <= shared_b[b_end-1].k) --b_end;
-        }
+        while (b < TDIM-1 && a_min > shared_b[b].k) ++b;
     }
-
-    /*if (TID == 0) {
-        for (int i = 0; i < TDIM; ++i)
-        {
-            printf("%d: %d %d\n", i, shared_a[i], shared_b[i]);
-        }
-    }*/
+    if (a_end < TDIM) {
+        const Key a_next_min = shared_a[a_end].k;
+        while (b_end < TDIM && a_next_min > shared_b[b_end-1].k) b_end += 32;
+        while (b_end > 0 && a_next_min <= shared_b[b_end-1].k) --b_end;
+    }
 
     __syncthreads();
 
-    if (lItemId == 0) {
-        int32_t i = a + b;
-
-        //printf("Merging %d i:%d a:%d %d b:%d %d\n", TID >> 5, i, a, a_end, b, b_end);
+    if ((TID & 32 - 1) == 0) {
+        Element v_a = shared_a[a];
+        Element v_b = shared_b[b];
 
         while (a < a_end || b < b_end) {
-            if (b >= b_end || (a < a_end && shared_a[a].k < shared_b[b].k)) {
-                shared_out[i++] = shared_a[a++];
+            if (b >= b_end || (a < a_end && v_a.k < v_b.k)) {
+                shared_out[a + b] = v_a;
+                v_a = shared_a[++a];
             } else {
-                shared_out[i++] = shared_b[b++];
+                shared_out[a + b] = v_b;
+                v_b = shared_b[++b];
             }
         }
-
-        //printf("Merged %d i:%d a:%d b:%d\n", TID >> 5, i, a, b);
     }
 
     __syncthreads();
-    values[idx*2] = shared_out[TID*2];
-    values[idx*2+1] = shared_out[TID*2+1];
+    values[idx << 1] = shared_out[TID << 1];
+    values[(idx << 1) + 1] = shared_out[(TID << 1) + 1];
 }
 
-/*__global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
+__global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
                                             Element* __restrict__ values_sorted,
                                             const int32_t iteration,
                                             const int32_t N)
 {
-    const int32_t lb_idx = TDIM * BID * 2;
-    const int32_t idx = lb_idx + TID;
+    /*extern __shared__ Element shared_values[];
+    const int32_t idx = TDIM * BID + TID;
 
-    const int32_t srcMergeSize = 1 << iteration; //2^iteration
-    const int32_t dstMergeSize = srcMergeSize << 1; //2^(iteration+1)
-
-    const int32_t lb_num = srcMergeSize / TDIM;
-
-    const int32_t srcMergeIdA = (idx >> iteration) << iteration; // start, end = srcMergeIdA+srcMergeSize-1
-    const int32_t srcMergeIdB = srcMergeIdA + srcMergeSize; // start, end = srcMergeIdB+srcMergeSize-1
-
-
-}*/
+    values += idx*/
+}
 
 __host__ void inline MergeSort(Element** d_mem_values,
                                Element** d_mem_sorted,
@@ -152,7 +128,7 @@ __host__ void inline MergeSort(Element** d_mem_values,
 {
     for (int32_t i = 0; (1 << i) < N; ++i) {
 
-        if ((1 << i) <= 32) {
+        if (i <= 6) {
             kdim v = get_kdim_nt(N, (2 << i));
             CUDA_MergeSortSmall<<<v.dim_blocks, v.num_threads, v.num_threads*sizeof(Element) << 1>>>(*d_mem_values, i);
         } else if ((1 << i) <= MAX_THREADS) {
