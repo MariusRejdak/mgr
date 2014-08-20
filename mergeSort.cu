@@ -130,19 +130,17 @@ __global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
     }
     idx &= srcMergeSize - 1;
 
-    Element* shared_a = values + 2*(idx & ~(srcMergeSize - 1));
+    Element* shared_a = values;// + 2*(idx & ~(srcMergeSize - 1));
     Element* shared_b = shared_a + srcMergeSize;
     //__shared__ Element* shared_a[MERGE_SIZE]; // = values + 2*(idx & ~(srcMergeSize - 1));
     //__shared__ Element* shared_b[MERGE_SIZE]; // = shared_a + srcMergeSize;
     //__shared__ Element* shared_out[MERGE_SIZE << 1]; // = values_sorted + 2*(idx & ~(srcMergeSize - 1));
-    Element* shared_out = values_sorted + 2*(idx & ~(srcMergeSize - 1));
+    Element* shared_out = values_sorted;// + 2*(idx & ~(srcMergeSize - 1));
 
     int32_t a = idx & ~(MERGE_SIZE - 1);
     int32_t a_end = a + MERGE_SIZE;
     int32_t b = a;
     int32_t b_end = a_end;
-
-    //shared_a[idl] = values[]
 
     if (idl == 0) {
         if (a > 0) {
@@ -155,6 +153,8 @@ __global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
             while (b_end < srcMergeSize && a_next_min > shared_b[b_end-1].k) b_end += MERGE_SIZE;
             while (b_end > 0 && a_next_min <= shared_b[b_end-1].k) --b_end;
         }
+
+        //printf("%d\n", b_end-b);
 
         Element v_a = shared_a[a];
         Element v_b = shared_b[b];
@@ -223,6 +223,7 @@ int main(int argc, char** argv)
         cudaDeviceSynchronize();
 
         printf("after %ld %s\n", N, is_int_array_sorted((Element*) h_mem, N, false) ? "true":"false");
+        //print_int_array((Element*) h_mem, N);
     }
 
     cudaFree(d_mem_values);
