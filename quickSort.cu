@@ -25,7 +25,7 @@ int main(int argc, char** argv)
         int32_t N = size/sizeof(Element);
         init_values((Element*) h_mem, N);
 
-        //gpuqsort((Element*) h_mem, N);
+        gpuqsort((unsigned int*) h_mem, N);
         cudaDeviceSynchronize();
         gpuErrchk( cudaPeekAtLastError() );
 

@@ -49,10 +49,10 @@ int main(int argc, char** argv)
         thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem);
 
         //Radix sort
-        //thrust::stable_sort(d_mem, d_mem+N);
+        thrust::stable_sort(d_mem, d_mem+N);
 
         //Merge sort
-        thrust::stable_sort(d_mem, d_mem+N, my_less<Key>());
+        //thrust::stable_sort(d_mem, d_mem+N, my_less<Key>());
 
         thrust::copy(d_mem, d_mem+N, (Key*)h_mem);
         //qsort(h_mem, N, sizeof(Element), my_compare);
