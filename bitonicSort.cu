@@ -11,7 +11,7 @@
 #include "cuda_utils.h"
 
 
-__global__ static void CUDA_BitonicSort(Element* __restrict__ values,
+__global__ static void CUDA_BitonicSort_Global(Element* __restrict__ values,
                                         const int32_t j,
                                         const int32_t k)
 {
@@ -29,14 +29,45 @@ __global__ static void CUDA_BitonicSort(Element* __restrict__ values,
     }
 }
 
+__global__ static void CUDA_BitonicSort_Shared(Element* __restrict__ values)
+{
+    extern __shared__ Element shared_values[];
+
+    shared_values[TID] = values[TID];
+    __syncthreads();
+
+    for (int32_t k = 2; k <= TDIM; k <<= 1) {
+        for (int32_t j = k >> 1; j > 0; j >>= 1) {
+            const int32_t ixj = TID^j;
+
+            if (ixj > TID) {
+                const Element v_idx = shared_values[TID];
+                const Element v_ixj = shared_values[ixj];
+
+                if ((TID&k) ? (v_idx.k < v_ixj.k) : (v_idx.k > v_ixj.k)) {
+                    shared_values[TID] = v_ixj;
+                    shared_values[ixj] = v_idx;
+                }
+            }
+            __syncthreads();
+        }
+    }
+
+    values[TID] = shared_values[TID];
+}
+
 __host__ void inline BitonicSort(Element* d_mem, const int32_t N)
 {
     kdim v = get_kdim(N);
 
-    for (int32_t k = 2; k <= N; k <<= 1) {
-        for (int32_t j = k >> 1; j > 0; j >>= 1) {
-            CUDA_BitonicSort<<<v.dim_blocks, v.num_threads>>>(d_mem, j, k);
-            cudaDeviceSynchronize();
+    if (v.num_blocks == 1) {
+        CUDA_BitonicSort_Shared<<<v.dim_blocks, v.num_threads, v.num_threads * sizeof(Element)>>>(d_mem);
+    } else {
+        for (int32_t k = 2; k <= N; k <<= 1) {
+            for (int32_t j = k >> 1; j > 0; j >>= 1) {
+                CUDA_BitonicSort_Global<<<v.dim_blocks, v.num_threads>>>(d_mem, j, k);
+                cudaDeviceSynchronize();
+            }
         }
     }
 }
