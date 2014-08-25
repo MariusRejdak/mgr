@@ -1,15 +1,24 @@
 /*
- * quickSort.cu
+ * thrustSort.cu
  *
  */
 
-#include <math.h>
-#include <time.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include "utils.h"
-#include "cuda_utils.h"
-#include "gpuqsortlib/gpuqsort.cu"
+#include <cmath>
+#include <ctime>
+#include <cstdio>
+#include <cstdlib>
+#include <algorithm>
+
+extern "C" {
+    #include "utils.h"
+}
+
+using namespace std;
+
+int my_compare (const Element &a, const Element &b)
+{
+    return a.k < b.k;
+}
 
 // program main
 int main(int argc, char** argv)
@@ -21,7 +30,7 @@ int main(int argc, char** argv)
 
     srand(time(NULL));
 
-    printf("Quick sort\n");
+    printf("CPU STL sort\n");
     printf("%s,%s,%ld,%ld\n", "size", "time", CLOCKS_PER_SEC, sizeof(Element));
 
     for(int32_t size = MIN_SIZE; size <= MAX_SIZE; size <<= 1) {
@@ -29,14 +38,14 @@ int main(int argc, char** argv)
         clock_t t_sum = 0;
 
         for (int i = 0; i < 100; ++i) {
-            clock_t t;
+            clock_t t1;
             init_values((Element*) h_mem, N);
 
-            gpuqsort((unsigned int*) h_mem, N, &t);
-            gpuErrchk( cudaPeekAtLastError() );
+            t1 = clock();
+            sort((Element*)h_mem, (Element*)h_mem+N, my_compare);
+            t_sum += clock() - t1;
 
             assert(is_int_array_sorted((Element*) h_mem, N, false));
-            t_sum += t;
         }
         t_sum /= 100;
 

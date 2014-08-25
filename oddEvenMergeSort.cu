@@ -121,32 +121,45 @@ __host__ void inline OddEvenMergeSort(Element** d_mem_values,
 // program main
 int main(int argc, char** argv)
 {
-    void *h_mem, *d_mem_values; //, *d_mem_sorted;
+    void *h_mem, *d_mem; //, *d_mem_sorted;
 
     h_mem = malloc(MAX_SIZE);
     assert(h_mem != NULL);
-    gpuErrchk( cudaMalloc(&d_mem_values, MAX_SIZE) );
+    gpuErrchk( cudaMalloc(&d_mem, MAX_SIZE) );
 
     srand(time(NULL));
 
+    printf("Odd-even merge sort\n");
+    printf("%s,%s,%ld,%ld\n", "size", "time", CLOCKS_PER_SEC, sizeof(Element));
+
     for(int32_t size = MIN_SIZE; size <= MAX_SIZE; size <<= 1) {
         int32_t N = size/sizeof(Element);
-        init_values((Element*) h_mem, N);
+        clock_t t1, t2, t_sum = 0;
 
-        copy_to_device_time(d_mem_values, h_mem, size);
-        cudaDeviceSynchronize();
+        for (int i = 0; i < 100; ++i) {
+            init_values((Element*) h_mem, N);
 
-        OddEvenMergeSort((Element**) &d_mem_values, N);
-        cudaDeviceSynchronize();
-        gpuErrchk( cudaPeekAtLastError() );
+            copy_to_device_time(d_mem, h_mem, size);
+            cudaDeviceSynchronize();
 
-        copy_to_host_time(h_mem, d_mem_values, size);
-        cudaDeviceSynchronize();
+            t1 = clock();
+            OddEvenMergeSort((Element**) &d_mem, N);
+            cudaDeviceSynchronize();
+            t2 = clock();
+            t_sum += t2 - t1;
+            gpuErrchk( cudaPeekAtLastError() );
 
-        printf("after %ld %s\n", N, is_int_array_sorted((Element*) h_mem, N, false) ? "true":"false");
+            copy_to_host_time(h_mem, d_mem, size);
+            cudaDeviceSynchronize();
+
+            assert(is_int_array_sorted((Element*) h_mem, N, false));
+        }
+        t_sum /= 100;
+
+        printf("%ld,%ld\n", N, t_sum);
     }
 
-    cudaFree(d_mem_values);
+    cudaFree(d_mem);
     free(h_mem);
 
     return 0;

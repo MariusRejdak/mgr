@@ -4,16 +4,16 @@
 * Copyright (c) 2007-2008, Daniel Cederman and Philippas Tsigas
 * All rights reserved.
 *
-* Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following 
+* Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
 * conditions are met:
 *
 * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer 
+* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer
 * in the documentation and/or other materials provided with the distribution.
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
-* BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT 
-* SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL 
-* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
+* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING,
+* BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+* SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
 * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 **/
@@ -100,7 +100,7 @@ struct LQSortParams
 * @returns 0 if successful. For non-zero values, use getErrorStr() for more information about why it failed.
 */
 template <typename element>
-int GPUQSort<element>::sort(element* data, unsigned int size, double* timerValue, unsigned int blockscount, unsigned int threads, unsigned int sbsize, unsigned int phase)
+int GPUQSort<element>::sort(element* data, unsigned int size, clock_t* timerValue, unsigned int blockscount, unsigned int threads, unsigned int sbsize, unsigned int phase)
 {
 	if(!init)
 		return 1;
@@ -122,12 +122,10 @@ int GPUQSort<element>::sort(element* data, unsigned int size, double* timerValue
 #endif
 
 	if(threads>MAXTHREADS)
-		return 1; 
+		return 1;
 
 	if(blockscount>MAXBLOCKS)
 		return 1;
-
-	SimpleTimer st;
 
 	// Copy the data to the graphics card and create an auxiallary array
 	ddata2 = 0; ddata = 0;
@@ -138,13 +136,13 @@ int GPUQSort<element>::sort(element* data, unsigned int size, double* timerValue
 	if(!errCheck(cudaMemcpy(ddata, data, size*sizeof(element), cudaMemcpyHostToDevice) ))
 		return 1;
 
-
-	if(timerValue!=0)
+	clock_t t1;
+	if(timerValue != 0)
 	{
 		// Start measuring time
 		cudaThreadSynchronize();
-		
-		st.start();
+
+		t1 = clock();
 	}
 
 	// We start with a set containg only the sequence to be sorted
@@ -190,7 +188,7 @@ int GPUQSort<element>::sort(element* data, unsigned int size, double* timerValue
 				params[paramsize].ptr = i;
 				params[paramsize].last = false;
 				paramsize++;
-				
+
 			}
 			params[paramsize-1].last = true;
 			params[paramsize-1].end = workset[i].end;
@@ -214,29 +212,29 @@ int GPUQSort<element>::sort(element* data, unsigned int size, double* timerValue
 		else
 			part1<<< paramsize, THREADS, (THREADS+1)*2*4+THREADS*2*4 >>>(ddata2,dparams,dhists,dlength);
 		if(!errCheck((cudaMemcpy(length, dlength,sizeof(Length<element>) , cudaMemcpyDeviceToHost) )))
-			return 1; 
+			return 1;
 
 		// Do the block cumulative sum. Done on the CPU since not all cards have support for
-		// atomic operations yet. 
+		// atomic operations yet.
 		for(unsigned int i=0;i<paramsize;i++)
 		{
 			unsigned int l = length->left[i];
 			unsigned int r = length->right[i];
-			
+
 			length->left[i] = workset[params[i].ptr].beg;
 			length->right[i] = workset[params[i].ptr].end;
-			
+
 			workset[params[i].ptr].beg+=l;
 			workset[params[i].ptr].end-=r;
 			workset[params[i].ptr].altered = true;
-			
+
 			workset[params[i].ptr].rmaxpiv = max(length->maxpiv[i],workset[params[i].ptr].rmaxpiv);
 			workset[params[i].ptr].lminpiv = min(length->minpiv[i],workset[params[i].ptr].lminpiv);
-			
-			workset[params[i].ptr].lmaxpiv = min(workset[params[i].ptr].pivot,workset[params[i].ptr].rmaxpiv); 
-			workset[params[i].ptr].rminpiv = max(workset[params[i].ptr].pivot,workset[params[i].ptr].lminpiv); 
 
-			
+			workset[params[i].ptr].lmaxpiv = min(workset[params[i].ptr].pivot,workset[params[i].ptr].rmaxpiv);
+			workset[params[i].ptr].rminpiv = max(workset[params[i].ptr].pivot,workset[params[i].ptr].lminpiv);
+
+
 		}
 
 		// Copy the result of the block cumulative sum to the GPU
@@ -311,16 +309,16 @@ int GPUQSort<element>::sort(element* data, unsigned int size, double* timerValue
 			return 1;
 
 		// Run the local quicksort, the one that doesn't need inter-block synchronization
-		if(phase!=1) 
+		if(phase!=1)
 			lqsort<<< worksize, THREADS, max((THREADS+1)*2*4,sbsize*4) >>>(ddata,ddata2,dlqparams,phase);
 	}
 
 	cudaThreadSynchronize();
 
-	if(timerValue!=0)
+	if(timerValue != 0)
 	{
 		// Measure the time taken
-		*timerValue = st.end();
+		*timerValue = clock() - t1;
 	}
 
 	err = cudaThreadSynchronize();
@@ -426,12 +424,12 @@ GPUQSort<element>::~GPUQSort()
 
 // Exported functions
 
-char* expErrMsg = "No errors";
+const char* expErrMsg = "No errors";
 
- GPUQSort<unsigned int>* s=0;
+GPUQSort<unsigned int>* s=0;
 
-extern "C" 
-DLLEXPORT int gpuqsort(unsigned int* data, unsigned int size, double* timerValue, unsigned int blockscount, unsigned int threads, unsigned int sbsize, unsigned int phase)
+extern "C"
+DLLEXPORT int gpuqsort(unsigned int* data, unsigned int size, clock_t* timerValue, unsigned int blockscount, unsigned int threads, unsigned int sbsize, unsigned int phase)
 {
 	if(s==0)
 		s=new GPUQSort<unsigned int>();
@@ -449,7 +447,7 @@ DLLEXPORT int gpuqsort(unsigned int* data, unsigned int size, double* timerValue
 // Float support removed due to some problems with CUDA 2.0 and templates
 // Will be fixed
 
-//extern "C" DLLEXPORT 
+//extern "C" DLLEXPORT
 /*int gpuqsortf(float* data, unsigned int size, double* timerValue)
 {
 	GPUQSort<float> s;

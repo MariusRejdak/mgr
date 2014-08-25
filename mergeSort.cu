@@ -231,22 +231,34 @@ int main(int argc, char** argv)
 
     srand(time(NULL));
 
+    printf("Merge sort\n");
+    printf("%s,%s,%ld,%ld\n", "size", "time", CLOCKS_PER_SEC, sizeof(Element));
+
     for(int32_t size = MIN_SIZE; size <= MAX_SIZE; size <<= 1) {
         int32_t N = size/sizeof(Element);
-        init_values((Element*) h_mem, N);
+        clock_t t1, t2, t_sum = 0;
 
-        copy_to_device_time(d_mem_values, h_mem, size);
-        cudaDeviceSynchronize();
+        for (int i = 0; i < 100; ++i) {
+            init_values((Element*) h_mem, N);
 
-        MergeSort((Element**) &d_mem_values, (Element**) &d_mem_sorted, N);
-        cudaDeviceSynchronize();
-        gpuErrchk( cudaPeekAtLastError() );
+            copy_to_device_time(d_mem_values, h_mem, size);
+            cudaDeviceSynchronize();
 
-        copy_to_host_time(h_mem, d_mem_sorted, size);
-        cudaDeviceSynchronize();
+            t1 = clock();
+            MergeSort((Element**) &d_mem_values, (Element**) &d_mem_sorted, N);
+            cudaDeviceSynchronize();
+            t2 = clock();
+            t_sum += t2 - t1;
+            gpuErrchk( cudaPeekAtLastError() );
 
-        printf("after %ld %s\n", N, is_int_array_sorted((Element*) h_mem, N, false) ? "true":"false");
-        //print_int_array((Element*) h_mem, N);
+            copy_to_host_time(h_mem, d_mem_sorted, size);
+            cudaDeviceSynchronize();
+
+            assert(is_int_array_sorted((Element*) h_mem, N, false));
+        }
+        t_sum /= 100;
+
+        printf("%ld,%ld\n", N, t_sum);
     }
 
     cudaFree(d_mem_values);

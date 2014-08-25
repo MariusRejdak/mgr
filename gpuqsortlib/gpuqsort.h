@@ -48,7 +48,7 @@
 * @returns 0 if successful. For non-zero values, use getErrorStr() for more information about why it failed.
 */
 extern "C"
-DLLEXPORT int gpuqsort(unsigned int* data, unsigned int size, double* timerValue=0, unsigned int blockscount = 0, unsigned int threads = 0, unsigned int sbsize = 0, unsigned int phase = 0);
+DLLEXPORT int gpuqsort(unsigned int* data, unsigned int size, clock_t* timerValue=0, unsigned int blockscount = 0, unsigned int threads = 0, unsigned int sbsize = 0, unsigned int phase = 0);
 
 // Float support removed due to some problems with CUDA 2.0 and templates
 // Will be fixed
@@ -94,7 +94,7 @@ public:
 	GPUQSort();
 	~GPUQSort();
 
-	int sort(element* data, unsigned int size, double* timerValue=0, unsigned int blockscount = 0, unsigned int threads = 0, unsigned int sbsize = 0, unsigned int phase = 0);
+	int sort(element* data, unsigned int size, clock_t* timerValue=0, unsigned int blockscount = 0, unsigned int threads = 0, unsigned int sbsize = 0, unsigned int phase = 0);
 	const char* getErrorStr();
 };
 

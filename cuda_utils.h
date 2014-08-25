@@ -27,9 +27,9 @@ typedef struct kdim {
     dim3 dim_blocks;
 } kdim;
 
-kdim get_kdim_b(size_t blocks) {
+kdim get_kdim_b(size_t blocks, size_t threads) {
     kdim v;
-    v.num_threads = MAX_THREADS;
+    v.num_threads = threads;
     v.dim_blocks.y = 1;
     v.dim_blocks.z = 1;
 

@@ -42,22 +42,59 @@ int main(int argc, char** argv)
 
     srand(time(NULL));
 
+    printf("Radix sort (thrust)\n");
+    printf("%s,%s,%ld,%ld\n", "size", "time", CLOCKS_PER_SEC, sizeof(Element));
+
     for(int32_t size = MIN_SIZE; size <= MAX_SIZE; size <<= 1) {
         int32_t N = size/sizeof(Element);
-        init_values((Element*) h_mem, N);
+        clock_t t_sum = 0;
 
-        thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem);
+        for (int i = 0; i < 100; ++i) {
+            clock_t t1;
+            init_values((Element*) h_mem, N);
 
-        //Radix sort
-        thrust::stable_sort(d_mem, d_mem+N);
+            thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem);
 
-        //Merge sort
-        //thrust::stable_sort(d_mem, d_mem+N, my_less<Key>());
+            //Radix sort
+            t1 = clock();
+            thrust::stable_sort(d_mem, d_mem+N);
+            t_sum += clock() - t1;
 
-        thrust::copy(d_mem, d_mem+N, (Key*)h_mem);
-        //qsort(h_mem, N, sizeof(Element), my_compare);
+            thrust::copy(d_mem, d_mem+N, (Key*)h_mem);
 
-        printf("after %ld %s\n", N, is_int_array_sorted((Element*) h_mem, N, false) ? "true":"false");
+            assert(is_int_array_sorted((Element*) h_mem, N, false));
+        }
+        t_sum /= 100;
+
+        printf("%ld,%ld\n", N, t_sum);
+    }
+    printf("\n");
+
+    printf("Merge sort (thrust)\n");
+    printf("%s,%s,%ld,%ld\n", "size", "time", CLOCKS_PER_SEC, sizeof(Element));
+
+    for(int32_t size = MIN_SIZE; size <= MAX_SIZE; size <<= 1) {
+        int32_t N = size/sizeof(Element);
+        clock_t t_sum = 0;
+
+        for (int i = 0; i < 100; ++i) {
+            clock_t t1;
+            init_values((Element*) h_mem, N);
+
+            thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem);
+
+            //Merge sort
+            t1 = clock();
+            thrust::stable_sort(d_mem, d_mem+N, my_less<Key>());
+            t_sum += clock() - t1;
+
+            thrust::copy(d_mem, d_mem+N, (Key*)h_mem);
+
+            assert(is_int_array_sorted((Element*) h_mem, N, false));
+        }
+        t_sum /= 100;
+
+        printf("%ld,%ld\n", N, t_sum);
     }
 
     free(h_mem);
