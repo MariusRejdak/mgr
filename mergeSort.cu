@@ -17,25 +17,14 @@ __global__ static void CUDA_MergeSortSmall(Element* __restrict__ values,
                                            Element* __restrict__ values_sorted,
                                            const int32_t iteration)
 {
-    //extern __shared__ Element shared_values[];
     const int32_t srcMergeSize = 1 << iteration;
     const int32_t dstMergeSize = srcMergeSize << 1;
-    const int32_t idx = TDIM * BID * dstMergeSize;
+    const int32_t idx = BID * dstMergeSize;
 
     values += idx;
     Element* __restrict__ values_a = values;
     Element* __restrict__ values_b = values + srcMergeSize;
     values_sorted += idx;
-
-    /*Element* shared_a = shared_values;
-    Element* shared_b = shared_values + srcMergeSize;
-    Element* shared_out = shared_values + dstMergeSize;
-
-    for (int32_t i = 0; i < srcMergeSize; ++i)
-    {
-        shared_a[i] = values_a[i];
-        shared_b[i] = values_b[i];
-    }*/
 
     int32_t a = 0;
     int32_t b = 0;
@@ -51,34 +40,28 @@ __global__ static void CUDA_MergeSortSmall(Element* __restrict__ values,
             if (++b < srcMergeSize) v_b = values_b[b];
         }
     }
-
-    /*for (int32_t i = 0; i < dstMergeSize; ++i)
-    {
-        values_sorted[i] = shared_out[i];
-    }*/
 }
 
 
 __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
+                                            Element* __restrict__ values_sorted,
                                             const int32_t iteration,
                                             const int32_t merge_size)
 {
     extern __shared__ Element shared_values[];
     const int32_t srcMergeSize = 1 << iteration;
     int32_t idx = (TDIM * BID + TID) * merge_size;
-    Element* shared_a = shared_values;
-    Element* shared_b = shared_values + srcMergeSize;
-    Element* shared_out = shared_values + (srcMergeSize << 1);
 
-    values += (idx & ~(srcMergeSize - 1)) << 1;
-    idx &= srcMergeSize - 1;
-
-    for (int32_t i = 0; i < merge_size; ++i)
     {
-        shared_a[TID*merge_size + i] = values[idx + i];
-        shared_b[TID*merge_size + i] = values[idx + srcMergeSize + i];
+        int32_t offset = (idx & ~(srcMergeSize - 1)) << 1;
+        values_sorted += offset;
+        values += offset;
+        idx &= srcMergeSize - 1;
     }
-    __syncthreads();
+
+    Element* __restrict__ shared_a = values + idx - TID*merge_size;
+    Element* __restrict__ shared_b = shared_a + srcMergeSize;
+    Element* __restrict__ shared_out = values_sorted + idx - TID*merge_size;
 
     int32_t a = TID*merge_size;
     int32_t a_end = a + merge_size;
@@ -134,13 +117,6 @@ __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
             else
                 break;
         }
-    }
-
-    __syncthreads();
-    for (int32_t i = 0; i < merge_size; ++i)
-    {
-        values[idx + i] = shared_out[TID*merge_size + i];
-        values[idx + i + srcMergeSize] = shared_out[TID*merge_size + i + srcMergeSize];
     }
 }
 
@@ -223,11 +199,12 @@ __host__ void inline MergeSort(Element** d_mem_values,
     for (int32_t i = 0; (1 << i) < N; ++i) {
         if (i <= 5) {
             kdim v = get_kdim_b(N >> (i+1), 1);
-            CUDA_MergeSortSmall<<<v.dim_blocks, v.num_threads /*, (4 << i) * sizeof(Element)*/>>>(*d_mem_values, *d_mem_sorted, i);
+            CUDA_MergeSortSmall<<<v.dim_blocks, v.num_threads>>>(*d_mem_values, *d_mem_sorted, i);
             swap((void**)d_mem_values, (void**)d_mem_sorted);
         } else if ((1 << i) <= MAX_THREADS) {
             kdim v = get_kdim_nt(N/2, (1 << i));
-            CUDA_MergeSortShared<<<v.dim_blocks, v.num_threads / MERGE_SIZE, v.num_threads*sizeof(Element) << 2>>>(*d_mem_values, i, MERGE_SIZE);
+            CUDA_MergeSortShared<<<v.dim_blocks, v.num_threads / MERGE_SIZE>>>(*d_mem_values, *d_mem_sorted, i, MERGE_SIZE);
+            swap((void**)d_mem_values, (void**)d_mem_sorted);
         }
         else {
             kdim v = get_kdim_b(N/MERGE_SIZE_G/2, 1);
