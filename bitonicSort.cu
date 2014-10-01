@@ -10,18 +10,25 @@
 #include "utils.h"
 #include "cuda_utils.h"
 
-
-__global__ static void CUDA_BitonicSort_Global(Element* __restrict__ values,
-                                        const int32_t j,
-                                        const int32_t k)
+/*
+ * Sortowanie bitoniczne w pamięci globalnej
+ */
+__global__ static void CUDA_BitonicSort_Global(
+    Element* __restrict__ values, //Słowo kluczowe __restrict__ wyłącza optymalizacje kompilatora dla tej zmiennej
+    const int32_t j,
+    const int32_t k)
 {
+    // Aby zachować synchronizację kolejne kernele są wywoływane synchronicznie
     const int32_t idx = TDIM * BID + TID;
     const int32_t ixj = idx^j;
 
     if (ixj > idx) {
+        // Zmienne lokalne (optymalizowane przez kompilator do rejestrów)
+        // dla ograniczenia ilości odwołań do pamięci globalnej
         const Element v_idx = values[idx];
         const Element v_ixj = values[ixj];
 
+        // Porównanie i zamiana
         if ((idx&k) ? (v_idx.k < v_ixj.k) : (v_idx.k > v_ixj.k)) {
             values[idx] = v_ixj;
             values[ixj] = v_idx;
@@ -29,26 +36,38 @@ __global__ static void CUDA_BitonicSort_Global(Element* __restrict__ values,
     }
 }
 
+/*
+ * Sortowanie bitoniczne przeprowadzane w pamięci współdzielonej
+ */
 __global__ static void CUDA_BitonicSort_Shared(Element* __restrict__ values)
 {
     extern __shared__ Element shared_values[];
 
+    // Kopiowanie do pamięci współdzielonej
     shared_values[TID] = values[TID];
+
+    // Oczekiwanie na zakończenie kopiowania
     __syncthreads();
 
+    // Pętla sortująca
     for (int32_t k = 2; k <= TDIM; k <<= 1) {
         for (int32_t j = k >> 1; j > 0; j >>= 1) {
             const int32_t ixj = TID^j;
 
             if (ixj > TID) {
+                // Zmienne lokalne (optymalizowane przez kompilator do rejestrów)
+                // dla ograniczenia ilości odwołań do pamięci współdzielonej
                 const Element v_idx = shared_values[TID];
                 const Element v_ixj = shared_values[ixj];
 
+                // Porównanie i zamiana
                 if ((TID&k) ? (v_idx.k < v_ixj.k) : (v_idx.k > v_ixj.k)) {
                     shared_values[TID] = v_ixj;
                     shared_values[ixj] = v_idx;
                 }
             }
+
+            // Synchronizacja globalna
             __syncthreads();
         }
     }
@@ -56,13 +75,18 @@ __global__ static void CUDA_BitonicSort_Shared(Element* __restrict__ values)
     values[TID] = shared_values[TID];
 }
 
+/*
+ * Wywołania funkcji kernel
+ */
 __host__ void inline BitonicSort(Element* d_mem, const int32_t N)
 {
     kdim v = get_kdim(N);
 
     if (v.num_blocks == 1) {
+        // Sortowanie można przeprowadzić w całości w pamięci współdzielonej
         CUDA_BitonicSort_Shared<<<v.dim_blocks, v.num_threads, v.num_threads * sizeof(Element)>>>(d_mem);
     } else {
+        // Sortowanie należy przeprowadzić w pamięci globalnej
         for (int32_t k = 2; k <= N; k <<= 1) {
             for (int32_t j = k >> 1; j > 0; j >>= 1) {
                 CUDA_BitonicSort_Global<<<v.dim_blocks, v.num_threads>>>(d_mem, j, k);

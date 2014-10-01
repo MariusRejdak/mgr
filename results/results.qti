@@ -3,7 +3,7 @@ QtiPlot 0.9.8 project file
 <windows>	11
 <table>
 results	19	47	26.08.2014 14:22
-geometry	0	692	445	220	minimized	
+geometry	0	671	445	220	minimized	
 header	size-named[L]	size[X]	Copytodevice[Y]	Copytohost[Y]	Copytodevice-time[Y]	Copytohost-time[Y]	Bitonicsort4B[Y]	Radixsort4B[Y]	Odd-evenmergesort4B[Y]	Mergesort4B[Y]	Quicksort4B[Y]	Radixsortthrust4B[Y]	Mergesortthrust4B[Y]	CPUSTLsort4B[Y]	Bitonicsort8B[Y]	Radixsort8B[Y]	Odd-evenmergesort8B[Y]	Mergesort8B[Y]	Radixsortthrust8B[Y]	Mergesortthrust8B[Y]	CPUSTLsort8B[Y]	Bitonicsort16B[Y]	Radixsort16B[Y]	Odd-evenmergesort16B[Y]	Mergesort16B[Y]	Radixsortthrust16B[Y]	Mergesortthrust16B[Y]	CPUSTLsort16B[Y]	Bitonicsort4BCopy[Y]	Radixsort4BCopy[Y]	Odd-evenmergesort4BCopy[Y]	Mergesort4BCopy[Y]	Quicksort4BCopy[Y]	Radixsortthrust4BCopy[Y]	Mergesortthrust4BCopy[Y]	Bitonicsort8BCopy[Y]	Radixsort8BCopy[Y]	Odd-evenmergesort8BCopy[Y]	Mergesort8BCopy[Y]	Radixsortthrust8BCopy[Y]	Mergesortthrust8BCopy[Y]	Bitonicsort16BCopy[Y]	Radixsort16BCopy[Y]	Odd-evenmergesort16BCopy[Y]	Mergesort16BCopy[Y]	Radixsortthrust16BCopy[Y]	Mergesortthrust16BCopy[Y]
 ColWidth	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	100	98	100	100	
 <com>
@@ -37,7 +37,7 @@ WindowLabel	/home/hake5/projects/mgr/results/results.csv	2
 </table>
 <multiLayer>
 bitonic_sort	1	1	26.08.2014 19:34
-geometry	0	0	785	592	
+geometry	54	79	785	592	
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -77,16 +77,16 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Bitonicsort16B	2	1	#ff0000	0	1.5	7	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Bitonicsort8B	2	1	#0000ff	0	1.5	7	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Bitonicsort4B	2	1	#ff00ff	0	1.5	7	3	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort16B	2	1	#000000	0	1.5	7	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort8B	2	1	#00ff00	0	1.5	7	3	#00ff00	#00ff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort4B	2	1	#00ffff	0	1.5	7	3	#00ffff	#00ffff	0	#000000	14	1	2	0	0	18	1
-scale	0	5.659671029233	550	0	8	5	3	0
-scale	1	5.659671029233	550	0	8	5	3	0
-scale	2	1	350000	0	20	0	3	0
-scale	3	1	350000	0	20	0	3	0
+curve	results_size	results_Bitonicsort16B	2	1	#000000	0	1.5	11	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Bitonicsort8B	2	1	#ff0000	0	1.5	11	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Bitonicsort4B	2	1	#0000ff	0	1.5	11	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort16B	2	1	#800000	0	1.5	11	14	#800000	#800000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort8B	2	1	#008000	0	1.5	11	14	#008000	#008000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort4B	2	1	#ff8000	0	1.5	11	14	#ff8000	#ff8000	0	#000000	14	1	2	0	0	18	1
+scale	0	4	512	0	8	5	3	0
+scale	1	4	512	0	8	5	3	0
+scale	2	1	524288	0	20	0	3	0
+scale	3	1	524288	0	20	0	3	0
 LabelsFormat	0	6	0	6	0	6	0	6
 AxisType	0	0	1;results_size-named	0	
 MajorTicks	1	1	1	1
@@ -128,30 +128,13 @@ EnabledTickLabels	1	1	1	1
 <AutoUpdate>1</AutoUpdate>
 <TeXOutput>0</TeXOutput>
 </Legend>
-<Ellipse>
-<Frame>1</Frame>
-<Color>#000000</Color>
-<FrameWidth>1</FrameWidth>
-<LineStyle>0</LineStyle>
-<x>23.557923784752</x>
-<y>3.8828962249479</y>
-<right>23.131595252751</right>
-<bottom>3.9187439807548</bottom>
-<attachTo>1</attachTo>
-<onTop>1</onTop>
-<visible>1</visible>
-<Background>#ffffff</Background>
-<Alpha>255</Alpha>
-<BrushColor>#ffffff</BrushColor>
-<BrushStyle>0</BrushStyle>
-</Ellipse>
 </graph>
 <LinkXAxes>0</LinkXAxes>
 <ScaleLayers>1</ScaleLayers>
 </multiLayer>
 <multiLayer>
 radix_sort	1	1	26.08.2014 20:26
-geometry	0	0	785	592	
+geometry	119	85	785	592	
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -191,15 +174,15 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Radixsort16B	2	1	#808000	0	1.5	7	3	#808000	#808000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsort8B	2	1	#ffff00	0	1.5	7	3	#ffff00	#ffff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsort4B	2	1	#ff00ff	0	1.5	7	3	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsortthrust16B	2	1	#800080	0	1.5	7	3	#800080	#800080	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsortthrust8B	2	1	#008080	0	1.5	7	3	#008080	#008080	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsortthrust4B	2	1	#0000a0	0	1.5	7	3	#0000a0	#0000a0	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort16B	2	1	#000000	0	1.5	7	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort8B	2	1	#00ff00	0	1.5	7	3	#00ff00	#00ff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort4B	2	1	#00ffff	0	1.5	7	3	#00ffff	#00ffff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsort16B	2	1	#000000	0	1.5	11	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsort8B	2	1	#ff0000	0	1.5	11	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsort4B	2	1	#0000ff	0	1.5	11	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsortthrust16B	2	1	#ff00ff	0	1.5	11	4	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsortthrust8B	2	1	#808000	0	1.5	11	4	#808000	#808000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsortthrust4B	2	1	#800080	0	1.5	11	4	#800080	#800080	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort16B	2	1	#800000	0	1.5	11	14	#800000	#800000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort8B	2	1	#008000	0	1.5	11	14	#008000	#008000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort4B	2	1	#ff8000	0	1.5	11	14	#ff8000	#ff8000	0	#000000	14	1	2	0	0	18	1
 scale	0	0.25	16384	0	9	5	3	0
 scale	1	0.25	16384	0	9	5	3	0
 scale	2	1	350000	0	20	0	3	0
@@ -254,7 +237,7 @@ EnabledTickLabels	1	1	1	1
 </multiLayer>
 <multiLayer>
 odd-even-mergesort	1	1	26.08.2014 20:38
-geometry	0	0	785	592	
+geometry	107	110	785	592	
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -294,12 +277,12 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Odd-evenmergesort16B	2	1	#808000	0	1.5	7	3	#808000	#808000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Odd-evenmergesort8B	2	1	#ffff00	0	1.5	7	3	#ffff00	#ffff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Odd-evenmergesort4B	2	1	#ff00ff	0	1.5	7	3	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort16B	2	1	#000000	0	1.5	7	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort8B	2	1	#00ff00	0	1.5	7	3	#00ff00	#00ff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort4B	2	1	#00ffff	0	1.5	7	3	#00ffff	#00ffff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Odd-evenmergesort16B	2	1	#000000	0	1.5	11	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Odd-evenmergesort8B	2	1	#ff0000	0	1.5	11	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Odd-evenmergesort4B	2	1	#0000ff	0	1.5	11	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort16B	2	1	#800000	0	1.5	11	14	#800000	#800000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort8B	2	1	#008000	0	1.5	11	14	#008000	#008000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort4B	2	1	#ff8000	0	1.5	11	14	#ff8000	#ff8000	0	#000000	14	1	2	0	0	18	1
 scale	0	22.6274169979695	724.077343935025	0	6	5	3	0
 scale	1	22.6274169979695	724.077343935025	0	6	5	3	0
 scale	2	1	350000	0	20	0	3	0
@@ -379,7 +362,7 @@ EnabledTickLabels	1	1	1	1
 </multiLayer>
 <multiLayer>
 mergesort	1	1	26.08.2014 20:46
-geometry	0	0	785	592	
+geometry	137	95	785	592	
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -419,15 +402,15 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Mergesort16B	2	1	#800080	0	1.5	7	3	#800080	#800080	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesort8B	2	1	#ffff00	0	1.5	7	3	#ffff00	#ffff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesort4B	2	1	#ff00ff	0	1.5	7	3	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesortthrust16B	2	1	#800000	0	1.5	7	3	#800000	#800000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesortthrust8B	2	1	#000080	0	1.5	7	3	#000080	#000080	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesortthrust4B	2	1	#808000	0	1.5	7	3	#808000	#808000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort16B	2	1	#000000	0	1.5	7	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort8B	2	1	#00ff00	0	1.5	7	3	#00ff00	#00ff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort4B	2	1	#00ffff	0	1.5	7	3	#00ffff	#00ffff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesort16B	2	1	#000000	0	1.5	11	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesort8B	2	1	#ff0000	0	1.5	11	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesort4B	2	1	#0000ff	0	1.5	11	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesortthrust16B	2	1	#ff00ff	0	1.5	11	4	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesortthrust8B	2	1	#808000	0	1.5	11	4	#808000	#808000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesortthrust4B	2	1	#800080	0	1.5	11	4	#800080	#800080	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort16B	2	1	#800000	0	1.5	11	14	#800000	#800000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort8B	2	1	#008000	0	1.5	11	14	#008000	#008000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort4B	2	1	#ff8000	0	1.5	11	14	#ff8000	#ff8000	0	#000000	14	1	2	0	0	18	1
 scale	0	4	1024	0	9	5	3	0
 scale	1	4	1024	0	9	5	3	0
 scale	2	1	350000	0	20	0	3	0
@@ -482,7 +465,7 @@ EnabledTickLabels	1	1	1	1
 </multiLayer>
 <multiLayer>
 quicksort	1	1	26.08.2014 20:51
-geometry	0	0	785	592	
+geometry	90	109	785	592	
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -522,8 +505,8 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Quicksort4B	2	1	#800000	0	1.5	7	3	#800000	#800000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort4B	2	1	#0000ff	0	1.5	7	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Quicksort4B	2	1	#800080	0	1.5	11	3	#800080	#800080	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort4B	2	1	#808000	0	1.5	11	14	#808000	#808000	0	#000000	14	1	2	0	0	18	1
 scale	0	0.5	512	0	11	5	3	0
 scale	1	0.5	512	0	11	5	3	0
 scale	2	1	350000	0	20	0	3	0
@@ -571,7 +554,7 @@ EnabledTickLabels	1	1	1	1
 </multiLayer>
 <multiLayer>
 all_4b	1	1	26.08.2014 20:56
-geometry	0	0	785	592	
+geometry	122	99	785	592	
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -611,14 +594,14 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Bitonicsort4B	2	1	#000000	0	1.5	7	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsort4B	2	1	#ff0000	0	1.5	7	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Odd-evenmergesort4B	2	1	#00ff00	0	1.5	7	3	#00ff00	#00ff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesort4B	2	1	#0000ff	0	1.5	7	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Quicksort4B	2	1	#00ffff	0	1.5	7	3	#00ffff	#00ffff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsortthrust4B	2	1	#ff00ff	0	1.5	7	3	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesortthrust4B	2	1	#ffff00	0	1.5	7	3	#ffff00	#ffff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort4B	2	1	#808000	0	1.5	7	3	#808000	#808000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Bitonicsort4B	2	1	#000000	0	1.5	11	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsort4B	2	1	#ff0000	0	1.5	11	5	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Odd-evenmergesort4B	2	1	#ff8000	0	1.5	11	6	#ff8000	#ff8000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesort4B	2	1	#0000ff	0	1.5	11	7	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Quicksort4B	2	1	#800080	0	1.5	11	14	#800080	#800080	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsortthrust4B	2	1	#ff00ff	0	1.5	11	8	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesortthrust4B	2	1	#008000	0	1.5	11	1	#008000	#008000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort4B	2	1	#808000	0	1.5	11	4	#808000	#808000	0	#000000	14	1	2	0	0	18	1
 scale	0	0.25	4096	0	8	5	3	0
 scale	1	0.25	4096	0	8	5	3	0
 scale	2	1	350000	0	20	0	3	0
@@ -672,7 +655,7 @@ EnabledTickLabels	1	1	1	1
 </multiLayer>
 <multiLayer>
 all_4b_copy	1	1	26.08.2014 21:20
-geometry	9	0	785	592	
+geometry	98	106	785	592	
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -712,14 +695,14 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Bitonicsort4BCopy	2	1	#000000	0	1.5	7	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsort4BCopy	2	1	#ff0000	0	1.5	7	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Odd-evenmergesort4BCopy	2	1	#00ff00	0	1.5	7	3	#00ff00	#00ff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesort4BCopy	2	1	#0000ff	0	1.5	7	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Quicksort4BCopy	2	1	#00ffff	0	1.5	7	3	#00ffff	#00ffff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsortthrust4BCopy	2	1	#ff00ff	0	1.5	7	3	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesortthrust4BCopy	2	1	#ffff00	0	1.5	7	3	#ffff00	#ffff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort4B	2	1	#808000	0	1.5	7	3	#808000	#808000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Bitonicsort4BCopy	2	1	#000000	0	1.5	11	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsort4BCopy	2	1	#ff0000	0	1.5	11	5	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Odd-evenmergesort4BCopy	2	1	#ff8000	0	1.5	11	6	#ff8000	#ff8000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesort4BCopy	2	1	#0000ff	0	1.5	11	7	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Quicksort4BCopy	2	1	#800080	0	1.5	11	14	#800080	#800080	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsortthrust4BCopy	2	1	#ff00ff	0	1.5	11	8	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesortthrust4BCopy	2	1	#008000	0	1.5	11	1	#008000	#008000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort4B	2	1	#808000	0	1.5	11	14	#808000	#808000	0	#000000	14	1	2	0	0	18	1
 scale	0	0.25	4096	0	8	5	3	0
 scale	1	0.25	4096	0	8	5	3	0
 scale	2	1	350000	0	20	0	3	0
@@ -773,7 +756,7 @@ EnabledTickLabels	1	1	1	1
 </multiLayer>
 <multiLayer>
 all_8b	1	1	26.08.2014 21:24
-geometry	0	0	785	592	
+geometry	99	121	785	592	
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -813,13 +796,13 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Bitonicsort8B	2	1	#000000	0	1.5	7	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsort8B	2	1	#ff0000	0	1.5	7	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Odd-evenmergesort8B	2	1	#00ff00	0	1.5	7	3	#00ff00	#00ff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesort8B	2	1	#0000ff	0	1.5	7	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsortthrust8B	2	1	#ff00ff	0	1.5	7	3	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesortthrust8B	2	1	#ffff00	0	1.5	7	3	#ffff00	#ffff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort8B	2	1	#808000	0	1.5	7	3	#808000	#808000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Bitonicsort8B	2	1	#000000	0	1.5	11	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsort8B	2	1	#ff0000	0	1.5	11	5	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Odd-evenmergesort8B	2	1	#ff8000	0	1.5	11	6	#ff8000	#ff8000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesort8B	2	1	#0000ff	0	1.5	11	7	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsortthrust8B	2	1	#ff00ff	0	1.5	11	8	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesortthrust8B	2	1	#008000	0	1.5	11	1	#008000	#008000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort8B	2	1	#808000	0	1.5	11	14	#808000	#808000	0	#000000	14	1	2	0	0	18	1
 scale	0	0.25	4096	0	8	5	3	0
 scale	1	0.25	4096	0	8	5	3	0
 scale	2	1	350000	0	20	0	3	0
@@ -872,7 +855,7 @@ EnabledTickLabels	1	1	1	1
 </multiLayer>
 <multiLayer>
 all_16b	1	1	26.08.2014 21:29
-geometry	0	0	785	592	
+geometry	727	148	785	592	
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -912,13 +895,13 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Bitonicsort16B	2	1	#000000	0	1.5	7	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsort16B	2	1	#ff0000	0	1.5	7	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Odd-evenmergesort16B	2	1	#00ff00	0	1.5	7	3	#00ff00	#00ff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesort16B	2	1	#0000ff	0	1.5	7	3	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Radixsortthrust16B	2	1	#ff00ff	0	1.5	7	3	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Mergesortthrust16B	2	1	#ffff00	0	1.5	7	3	#ffff00	#ffff00	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_CPUSTLsort16B	2	1	#808000	0	1.5	7	3	#808000	#808000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Bitonicsort16B	2	1	#000000	0	1.5	11	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsort16B	2	1	#ff0000	0	1.5	11	5	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Odd-evenmergesort16B	2	1	#ff8000	0	1.5	11	6	#ff8000	#ff8000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesort16B	2	1	#0000ff	0	1.5	11	7	#0000ff	#0000ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Radixsortthrust16B	2	1	#ff00ff	0	1.5	11	8	#ff00ff	#ff00ff	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Mergesortthrust16B	2	1	#008000	0	1.5	11	1	#008000	#008000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_CPUSTLsort16B	2	1	#808000	0	1.5	11	14	#808000	#808000	0	#000000	14	1	2	0	0	18	1
 scale	0	0.25	16384	0	9	5	3	0
 scale	1	0.25	16384	0	9	5	3	0
 scale	2	1	350000	0	20	0	3	0
@@ -971,7 +954,7 @@ EnabledTickLabels	1	1	1	1
 </multiLayer>
 <multiLayer>
 copy_rates	1	1	26.08.2014 21:30
-geometry	0	0	785	592	active
+geometry	682	105	785	592	active
 WindowLabel		0
 Margins	5	5	5	5
 Spacing	5	5
@@ -1011,8 +994,8 @@ AxesColors	#000000	#000000	#000000	#000000
 AxesNumberColors	#141312	#141312	#141312	#141312
 AxesBaseline	0	0	0	0	
 CanvasBackground	#ffffff	0
-curve	results_size	results_Copytodevice	2	1	#000000	0	1.5	7	3	#000000	#000000	0	#000000	14	1	2	0	0	18	1
-curve	results_size	results_Copytohost	2	1	#ff0000	0	1.5	7	3	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Copytodevice	2	1	#000000	0	2	11	8	#000000	#000000	0	#000000	14	1	2	0	0	18	1
+curve	results_size	results_Copytohost	2	1	#ff0000	0	2	11	7	#ff0000	#ff0000	0	#000000	14	1	2	0	0	18	1
 scale	0	64	8192	0	8	5	3	0
 scale	1	64	8192	0	8	5	3	0
 scale	2	1	524288	0	20	0	3	0

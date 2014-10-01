@@ -13,6 +13,9 @@
 #define MERGE_SIZE 32
 #define MERGE_SIZE_G 1024
 
+/*
+ * Scalanie dla małych porcji danych
+ */
 __global__ static void CUDA_MergeSortSmall(Element* __restrict__ values,
                                            Element* __restrict__ values_sorted,
                                            const int32_t iteration)
@@ -31,6 +34,7 @@ __global__ static void CUDA_MergeSortSmall(Element* __restrict__ values,
     Element v_a = values_a[a];
     Element v_b = values_b[b];
 
+    // Implementacja identyczna z klasyczną na CPU
     while (a + b < dstMergeSize) {
         if (b >= srcMergeSize || (a < srcMergeSize && v_a.k < v_b.k)) {
             values_sorted[a + b] = v_a;
@@ -52,6 +56,7 @@ __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
     const int32_t srcMergeSize = 1 << iteration;
     int32_t idx = (TDIM * BID + TID) * merge_size;
 
+    // Obliczenie miejsca rozpoczęcia i zakończenia scalania
     {
         int32_t offset = (idx & ~(srcMergeSize - 1)) << 1;
         values_sorted += offset;

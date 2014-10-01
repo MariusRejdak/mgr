@@ -10,17 +10,23 @@
 #include "utils.h"
 #include "cuda_utils.h"
 
-
-__global__ static void CUDA_OddEvenMergeSortShared(Element* __restrict__ values,
-                                                   const int32_t N)
+/*
+ * Soortowanie Batcher's odd-even mergesort
+ * w pamięci współdzielonej
+ */
+__global__ static void CUDA_OddEvenMergeSortShared(
+    Element* __restrict__ values,
+    const int32_t N)
 {
     const int32_t idx = TDIM * BID * 2 + TID;
     extern __shared__ Element s_v[];
 
+    // Kopiowanie do pamięci współdzielonej
     s_v[TID] = values[idx];
     s_v[TID+TDIM] = values[idx+TDIM];
     __syncthreads();
 
+    // Pętla sortująca
     for (int32_t size = 2; size <= N; size <<= 1)
     {
         int32_t stride = size / 2;
@@ -28,7 +34,8 @@ __global__ static void CUDA_OddEvenMergeSortShared(Element* __restrict__ values,
 
         {
             __syncthreads();
-            int32_t pos = 2 * threadIdx.x - (threadIdx.x & (stride - 1));
+            int32_t pos = 2 * threadIdx.x -
+                          (threadIdx.x & (stride - 1));
             if(s_v[pos].k > s_v[pos + stride].k) {
                 Element tmp = s_v[pos];
                 s_v[pos] = s_v[pos + stride];
@@ -40,7 +47,8 @@ __global__ static void CUDA_OddEvenMergeSortShared(Element* __restrict__ values,
         for (; stride > 0; stride >>= 1)
         {
             __syncthreads();
-            int32_t pos = 2 * threadIdx.x - (threadIdx.x & (stride - 1));
+            int32_t pos = 2 * threadIdx.x -
+                          (threadIdx.x & (stride - 1));
 
             if (offset >= stride)
                 if(s_v[pos - stride].k > s_v[pos].k) {
@@ -51,19 +59,24 @@ __global__ static void CUDA_OddEvenMergeSortShared(Element* __restrict__ values,
         }
     }
 
+    // Synchronizacja wszystkich wątków
     __syncthreads();
 
     values[idx] = s_v[TID];
     values[idx+TDIM] = s_v[TID+TDIM];
 }
 
-__global__ static void CUDA_OddEvenMergeSortGlobal(Element* __restrict__ values,
-                                                   const int32_t size,
-                                                   const int32_t stride)
+/*
+ * Soortowanie Batcher's odd-even mergesort
+ * w pamięci globalej
+ */
+__global__ static void CUDA_OddEvenMergeSortGlobal(
+    Element* __restrict__ values,
+    const int32_t size,
+    const int32_t stride)
 {
     const int32_t idx = TDIM * BID + TID;
 
-    //Odd-even merge
     int32_t pos = 2 * idx - (idx & (stride - 1));
 
     if (stride < size / 2)
@@ -93,25 +106,44 @@ __global__ static void CUDA_OddEvenMergeSortGlobal(Element* __restrict__ values,
     }
 }
 
-__host__ void inline OddEvenMergeSort(Element** d_mem_values,
-                                      const int32_t N)
+/*
+ * Wywołania funkcji kernel
+ */
+__host__ void inline OddEvenMergeSort(
+    Element** d_mem_values,
+    const int32_t N)
 {
     kdim v = get_kdim(N>>1);
 
     if (v.num_blocks == 1)
     {
-        CUDA_OddEvenMergeSortShared<<<v.dim_blocks, v.num_threads, N*sizeof(Element)>>>(*d_mem_values, N);
+        // Sortowanie można przeprowadzić w całości
+        // w pamięci współdzielonej
+        CUDA_OddEvenMergeSortShared<<<v.dim_blocks,
+                                      v.num_threads,
+                                      N*sizeof(Element)>>>
+                                   (*d_mem_values, N);
         cudaDeviceSynchronize();
     }
     else {
-        CUDA_OddEvenMergeSortShared<<<v.dim_blocks, v.num_threads, v.num_threads*2*sizeof(Element)>>>(*d_mem_values, v.num_threads*2);
+        // Sortowanie należy przeprowadzić w pamięci globalnej
+
+        // Pierwszy etap sortowania można przeprowadzić
+        // w pamięci współdzelonej
+        CUDA_OddEvenMergeSortShared<<<v.dim_blocks,
+                                      v.num_threads,
+                                      v.num_threads*2*sizeof(Element)>>>
+                                   (*d_mem_values, v.num_threads*2);
         cudaDeviceSynchronize();
 
+        // Sortowanie w pamięci globalnej
         for (int32_t size = 2 * v.num_threads; size <= N; size <<= 1)
         {
             for (int32_t stride = size / 2; stride > 0; stride >>= 1)
             {
-                CUDA_OddEvenMergeSortGlobal<<<v.dim_blocks, v.num_threads>>>(*d_mem_values, size, stride);
+                CUDA_OddEvenMergeSortGlobal<<<v.dim_blocks,
+                                              v.num_threads>>>
+                                           (*d_mem_values, size, stride);
                 cudaDeviceSynchronize();
             }
         }
