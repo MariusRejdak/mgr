@@ -10,7 +10,10 @@
 #include "utils.h"
 #include "cuda_utils.h"
 
+// Rozmiar porcji danych
 #define MERGE_SIZE 32
+
+// Rozmiar danych w bloku
 #define MERGE_SIZE_G 1024
 
 /*
@@ -46,7 +49,9 @@ __global__ static void CUDA_MergeSortSmall(Element* __restrict__ values,
     }
 }
 
-
+/*
+ * Scalanie dla porcji danych mieszczących się w jednym bloku
+ */
 __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
                                             Element* __restrict__ values_sorted,
                                             const int32_t iteration,
@@ -73,6 +78,7 @@ __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
     int32_t b = a;
     int32_t b_end = a_end;
 
+    // Wyszukiwanie które elementy mają być z którymi scalone
     if (a > 0) {
         const Key a_min = shared_a[a].k;
         while (b > 0 && a_min <= shared_b[b].k) b -= merge_size;
@@ -87,6 +93,7 @@ __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
     Element v_a = shared_a[a];
     Element v_b = shared_b[b];
 
+    // Scalanie
     if (a < a_end && b < b_end) {
         while (true) {
             if (v_a.k < v_b.k) {
@@ -125,6 +132,9 @@ __global__ static void CUDA_MergeSortShared(Element* __restrict__ values,
     }
 }
 
+/*
+ * Scalanie dla dużych porcji danych
+ */
 __global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
                                             Element* __restrict__ values_sorted,
                                             const int32_t iteration,
@@ -132,6 +142,8 @@ __global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
 {
     const int32_t srcMergeSize = 1 << iteration;
     int32_t idx = BID * merge_size;
+
+    // Obliczenie miejsca rozpoczęcia i zakończenia scalania
     {
         const int32_t offset = (idx & ~(srcMergeSize - 1)) << 1;
         values += offset;
@@ -146,6 +158,7 @@ __global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
     int32_t b = a;
     int32_t b_end = a_end;
 
+    // Wyszukiwanie które elementy mają być z którymi scalone
     if (a > 0) {
         const Key a_min = values[a].k;
         while (b > 0 && a_min <= values_b[b].k) b -= merge_size;
@@ -160,6 +173,7 @@ __global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
     Element v_a = values[a];
     Element v_b = values_b[b];
 
+    // Scalanie
     if (a < a_end && b < b_end)
         while (true) {
             if (v_a.k < v_b.k) {
@@ -197,6 +211,9 @@ __global__ static void CUDA_MergeSortGlobal(Element* __restrict__ values,
     }
 }
 
+/*
+ * Wywołania funkcji kernel
+ */
 __host__ void inline MergeSort(Element** d_mem_values,
                                Element** d_mem_sorted,
                                const int32_t N)

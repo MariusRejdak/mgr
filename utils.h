@@ -41,13 +41,17 @@ typedef struct Element_pair64p {
 //typedef Element_key32 Element;
 //typedef int32_t Key;
 
+// Wybrane porcje danych do testów
+// nie dotyczy thrustSort.cu
 typedef Element_key64 Element;
 typedef int64_t Key;
 
+// Rozmiary do testów
 #define MIN_SIZE 1024UL //1kB
 #define MAX_SIZE 1024UL*1024UL*256UL //256MB
 
-#define NUM_PASSES 10
+// Ilość powtórzeń
+#define NUM_PASSES 100
 
 void swap(void **lhs, void **rhs)
 {
