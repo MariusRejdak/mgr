@@ -1,6 +1,6 @@
 /*
  * thrustSort.cu
- *
+ * Author: Marius Rejdak
  */
 
 #include <math.h>
@@ -13,15 +13,6 @@
 #include <thrust/device_malloc.h>
 #include <thrust/system/cuda/detail/detail/stable_radix_sort.h>
 #include <thrust/execution_policy.h>
-
-/*int my_compare (const void *a, const void *b)
-{
-    Key _a = ((Element*)a)->k;
-    Key _b = ((Element*)b)->k;
-    if(_a < _b) return -1;
-    else if(_a == _b) return 0;
-    else return 1;
-}*/
 
 template<typename T>
 struct my_less {
@@ -38,7 +29,8 @@ int main(int argc, char** argv)
 
     h_mem = malloc(MAX_SIZE);
     assert(h_mem != NULL);
-    thrust::device_ptr<Key> d_mem = thrust::device_malloc<Key>(MAX_SIZE/sizeof(Key));
+    thrust::device_ptr<Key> d_mem_keys = thrust::device_malloc<Key>(MAX_SIZE/2/sizeof(Key));
+    thrust::device_ptr<Key> d_mem_values = thrust::device_malloc<Key>(MAX_SIZE/2/sizeof(Key));
 
     srand(time(NULL));
 
@@ -46,25 +38,26 @@ int main(int argc, char** argv)
     printf("%s,%s,%ld,%ld\n", "size", "time", CLOCKS_PER_SEC, sizeof(Element));
 
     for(int32_t size = MIN_SIZE; size <= MAX_SIZE; size <<= 1) {
-        int32_t N = size/sizeof(Element);
+        int32_t N = size/2/sizeof(Key);
         clock_t t_sum = 0;
 
-        for (int i = 0; i < 100; ++i) {
+        for (int i = 0; i < NUM_PASSES; ++i) {
             clock_t t1;
             init_values((Element*) h_mem, N);
 
-            thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem);
+            thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem_keys);
+            thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem_values);
 
             //Radix sort
             t1 = clock();
-            thrust::stable_sort(d_mem, d_mem+N);
+            thrust::stable_sort_by_key(d_mem_keys, d_mem_keys + N, d_mem_values);
             t_sum += clock() - t1;
 
-            thrust::copy(d_mem, d_mem+N, (Key*)h_mem);
+            thrust::copy(d_mem_keys, d_mem_keys+N, (Key*)h_mem);
 
             assert(is_int_array_sorted((Element*) h_mem, N, false));
         }
-        t_sum /= 100;
+        t_sum /= NUM_PASSES;
 
         printf("%ld,%ld\n", N, t_sum);
     }
@@ -77,22 +70,23 @@ int main(int argc, char** argv)
         int32_t N = size/sizeof(Element);
         clock_t t_sum = 0;
 
-        for (int i = 0; i < 100; ++i) {
+        for (int i = 0; i < NUM_PASSES; ++i) {
             clock_t t1;
             init_values((Element*) h_mem, N);
 
-            thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem);
+            thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem_keys);
+            thrust::uninitialized_copy((Key*)h_mem, (Key*)h_mem+N, d_mem_values);
 
             //Merge sort
             t1 = clock();
-            thrust::stable_sort(d_mem, d_mem+N, my_less<Key>());
+            thrust::stable_sort_by_key(d_mem_keys, d_mem_keys + N, d_mem_values, my_less<Key>());
             t_sum += clock() - t1;
 
-            thrust::copy(d_mem, d_mem+N, (Key*)h_mem);
+            thrust::copy(d_mem_keys, d_mem_keys+N, (Key*)h_mem);
 
             assert(is_int_array_sorted((Element*) h_mem, N, false));
         }
-        t_sum /= 100;
+        t_sum /= NUM_PASSES;
 
         printf("%ld,%ld\n", N, t_sum);
     }

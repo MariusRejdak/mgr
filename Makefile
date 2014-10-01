@@ -1,3 +1,9 @@
+#
+# Makefile
+# Author: Marius Rejdak
+#
+
+
 OBJ = bitonicSort.out mergeSort.out oddEvenMergeSort.out quickSort.out radixSort.out thrustSort.out stlSort.out
 
 all: $(OBJ)
@@ -9,11 +15,10 @@ all: $(OBJ)
 	g++ -O2 -m64 $< -o $@
 
 clean:
-	rm *.out
+	rm -f *.out *.csv
 
-test: all
+test:
 	for file in $(OBJ); do \
-		echo ""; \
-		echo "Testing $$file"; \
-    	bash -c "time ./$$file"; \
+		echo "Generate $$file"; \
+    	bash -c "./$$file > $$file.csv"; \
 	done

@@ -1,6 +1,6 @@
 /*
  * mergeSort.cu
- *
+ * Author: Marius Rejdak
  */
 
 #include <math.h>
@@ -238,7 +238,7 @@ int main(int argc, char** argv)
         int32_t N = size/sizeof(Element);
         clock_t t1, t2, t_sum = 0;
 
-        for (int i = 0; i < 100; ++i) {
+        for (int i = 0; i < NUM_PASSES; ++i) {
             init_values((Element*) h_mem, N);
 
             copy_to_device_time(d_mem_values, h_mem, size);
@@ -256,7 +256,7 @@ int main(int argc, char** argv)
 
             assert(is_int_array_sorted((Element*) h_mem, N, false));
         }
-        t_sum /= 100;
+        t_sum /= NUM_PASSES;
 
         printf("%ld,%ld\n", N, t_sum);
     }

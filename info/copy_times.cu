@@ -1,3 +1,8 @@
+/*
+ * copy_times.cu
+ * Author: Marius Rejdak
+ */
+
 #include "../utils.h"
 #include "../cuda_utils.h"
 #include <limits.h>

@@ -1,6 +1,6 @@
 /*
  * thrustSort.cu
- *
+ * Author: Marius Rejdak
  */
 
 #include <cmath>
@@ -37,7 +37,7 @@ int main(int argc, char** argv)
         int32_t N = size/sizeof(Element);
         clock_t t_sum = 0;
 
-        for (int i = 0; i < 100; ++i) {
+        for (int i = 0; i < NUM_PASSES; ++i) {
             clock_t t1;
             init_values((Element*) h_mem, N);
 
@@ -47,7 +47,7 @@ int main(int argc, char** argv)
 
             assert(is_int_array_sorted((Element*) h_mem, N, false));
         }
-        t_sum /= 100;
+        t_sum /= NUM_PASSES;
 
         printf("%ld,%ld\n", N, t_sum);
     }
